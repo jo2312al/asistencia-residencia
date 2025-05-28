@@ -21,10 +21,14 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY')
 db_config = {
-    'host': os.getenv('DB_HOST'),
-    'user': os.getenv('DB_USER'),
-    'password': os.getenv('DB_PASSWORD'),
-    'database': os.getenv('DB_NAME')
+    'user': os.getenv('AZURE_MYSQL_USER'),  # Usa el nombre de la notita en Azure
+    'password': os.getenv('AZURE_MYSQL_PASSWORD'),
+    'host': os.getenv('AZURE_MYSQL_HOST'),
+    'port': int(os.getenv('PORT', 3306)),  # Si no tienes PORT, usa 3306 por defecto
+    'database': os.getenv('AZURE_MYSQL_NAME'),  # Usa el nombre de la base de datos
+    'ssl_disabled': False,  # Usa un teléfono secreto seguro
+    'ssl_verify_cert': True,
+    'ssl_verify_identity': True,
 }
 db_manager = DatabaseManager(db_config)
 qr_manager = QRManager()
