@@ -1,9 +1,1 @@
-Flask==2.3.2
-Flask-Login==0.6.2
-mysql-connector-python==8.0.33
-qrcode==7.4.2
-Pillow==9.5.0
-pandas==2.0.3
-xlsxwriter==3.1.2
-reportlab==4.0.4
-Werkzeug==2.3.6
+Flask==2.3.2 Flask-Login==0.6.2 mysql-connector-python==8.0.33 pandas==2.2.2 openpyxl==3.1.2 reportlab==4.0.4 xlsxwriter==3.1.2 qrcode==7.4.2 Pillow==9.5.0 Werkzeug==2.3.6 gunicorn==22.0.0 python-dotenv==1.0.1

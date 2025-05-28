@@ -1,6 +1,7 @@
 import pandas as pd
 from werkzeug.utils import secure_filename
 import uuid
+from dotenv import load_dotenv
 import os
 from flask import Flask, request, jsonify, render_template, redirect, send_file, url_for, flash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
@@ -15,14 +16,15 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 import xlsxwriter
 from datetime import datetime
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key'  # Cambia por una clave segura
+app.secret_key = os.getenv('SECRET_KEY')
 db_config = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': '2312',  # Actualizada según tu código
-    'database': 'innovatec'
+    'host': os.getenv('DB_HOST'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'database': os.getenv('DB_NAME')
 }
 db_manager = DatabaseManager(db_config)
 qr_manager = QRManager()
