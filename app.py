@@ -1,4 +1,4 @@
-import pandas as pd  # ¡Esto ya está bien! No necesita cambios
+import pandas as pd
 from werkzeug.utils import secure_filename
 import uuid
 from dotenv import load_dotenv
@@ -17,20 +17,20 @@ from reportlab.lib.styles import getSampleStyleSheet
 import xlsxwriter
 from datetime import datetime
 
-# Carga las variables de entorno (para desarrollo local)
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
+# Ya no necesitamos load_dotenv porque no usamos variables de entorno
+# load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
 
 # Crea la aplicación Flask
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY')
+app.secret_key = "1b87d9937de10ed63301cf0442d0505e8d27fb5aca46c794a592e57cad78eedd"  # Puse la SECRET_KEY directamente
 
-# Configura la conexión a la base de datos usando las variables de Azure
+# Configura la conexión a la base de datos con los datos directamente
 db_config = {
-    'user': os.getenv('AZURE_MYSQL_USER'),
-    'password': os.getenv('AZURE_MYSQL_PASSWORD'),
-    'host': os.getenv('AZURE_MYSQL_HOST'),
-    'port': int(os.getenv('PORT', 3306)),
-    'database': os.getenv('AZURE_MYSQL_NAME'),
+    'user': "hkkmjylqed@innovatec-mysql",
+    'password': "Josealberto2312",  # Reemplaza con tu contraseña real
+    'host': "innovatec-mysql.mysql.database.azure.com",
+    'port': 3306,
+    'database': "innovatec",
     'ssl_disabled': False,
     'ssl_verify_cert': True,
     'ssl_verify_identity': True
@@ -306,7 +306,3 @@ def generate_report():
         return jsonify({'success': True, 'report_path': report_path})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-
-# No necesitas esto porque Azure usa gunicorn
-# if __name__ == '__main__':
-#     app.run(debug=False, port=5173)
