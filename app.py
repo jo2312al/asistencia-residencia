@@ -1,4 +1,4 @@
-import pandas as pd
+import pandas as pd  # ¡Esto ya está bien! No necesita cambios
 from werkzeug.utils import secure_filename
 import uuid
 from dotenv import load_dotenv
@@ -16,24 +16,32 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 import xlsxwriter
 from datetime import datetime
+
+# Carga las variables de entorno (para desarrollo local)
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
 
+# Crea la aplicación Flask
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY')
+
+# Configura la conexión a la base de datos usando las variables de Azure
 db_config = {
-    'user': os.getenv('AZURE_MYSQL_USER'),  # Usa el nombre de la notita en Azure
+    'user': os.getenv('AZURE_MYSQL_USER'),
     'password': os.getenv('AZURE_MYSQL_PASSWORD'),
     'host': os.getenv('AZURE_MYSQL_HOST'),
-    'port': int(os.getenv('PORT', 3306)),  # Si no tienes PORT, usa 3306 por defecto
-    'database': os.getenv('AZURE_MYSQL_NAME'),  # Usa el nombre de la base de datos
-    'ssl_disabled': False,  # Usa un teléfono secreto seguro
+    'port': int(os.getenv('PORT', 3306)),
+    'database': os.getenv('AZURE_MYSQL_NAME'),
+    'ssl_disabled': False,
     'ssl_verify_cert': True,
-    'ssl_verify_identity': True,
+    'ssl_verify_identity': True
 }
+
+# Crea los managers para la base de datos, QR y asistencias
 db_manager = DatabaseManager(db_config)
 qr_manager = QRManager()
 attendance_manager = AttendanceManager(db_manager)
 
+# Configura el login
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
@@ -139,6 +147,7 @@ def generate_qr():
             c = conn.cursor()
             c.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
             if not c.fetchone():
+                conn.close()
                 return jsonify({'success': False, 'error': f'Proyecto con ID {project_id} no existe'}), 400
             conn.close()
 
@@ -196,7 +205,6 @@ def register_attendance():
             return jsonify({'success': False, 'error': result}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/get_projects')
 @login_required
@@ -299,5 +307,6 @@ def generate_report():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(debug=False, port=5173)
+# No necesitas esto porque Azure usa gunicorn
+# if __name__ == '__main__':
+#     app.run(debug=False, port=5173)
