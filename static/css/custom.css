@@ -1,0 +1,18 @@
+body {
+    background-color: #FFFFFF;
+}
+.tecn-blue {
+    background-color: #003087;
+}
+.tecn-blue-text {
+    color: #003087;
+}
+.tecn-red {
+    background-color: #C8102E;
+}
+.logo-container img {
+    max-height: 40px;
+}
+.navbar-brand img {
+    max-height: 30px;
+}

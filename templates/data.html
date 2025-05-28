@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}Datos de Estudiantes{% endblock %}
+{% block content %}
+<h1 class="text-center tecn-blue-text mb-4">Estudiantes - Innovatec TecNM</h1>
+<div class="card shadow">
+    <div class="card-header tecn-blue text-white">
+        <h2 class="h5 mb-0">Lista de Estudiantes</h2>
+    </div>
+    <div class="card-body">
+        <div class="mb-3">
+
+                <i class="bi bi-download"></i> Descargar Códigos QR
+            </a>
+        </div>
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Matrícula</th>
+                    <th>Nombre</th>
+                    <th>Apellido P</th>
+                    <th>Apellido M</th>
+                    <th>Carrera</th>
+                    <th>Proyecto</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for student in students %}
+                <tr>
+                    <td>{{ student[4] }}</td>
+                    <td>{{ student[1] }}</td>
+                    <td>{{ student[2] }}</td>
+                    <td>{{ student[3] }}</td>
+                    <td>{{ student[5] }}</td>
+                    <td>{{ student[6] or 'Sin proyecto' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

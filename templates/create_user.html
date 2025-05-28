@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}Crear Usuario{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <h1 class="text-center tecn-blue-text mb-4">Crear Nuevo Usuario - Innovatec TecNM</h1>
+    <div class="card shadow">
+        <div class="card-header tecn-blue text-white">
+            <h2 class="h5 mb-0">Formulario de Registro</h2>
+        </div>
+        <div class="card-body">
+            <form id="create-user-form" method="POST" action="{{ url_for('create_user') }}">
+                <div class="mb-3">
+                    <label for="username" class="form-label">Nombre de Usuario</label>
+                    <input type="text" class="form-control" id="username" name="username" required>
+                </div>
+                <div class="mb-3">
+                    <label for="password" class="form-label">Contraseña</label>
+                    <input type="password" class="form-control" id="password" name="password" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Crear Usuario</button>
+            </form>
+            <div id="create-user-result" class="mt-3"></div>
+        </div>
+    </div>
+</div>
+<script>
+    document.getElementById('create-user-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        try {
+            const response = await fetch('/create_user', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            const resultContainer = document.getElementById('create-user-result');
+            if (result.success) {
+                resultContainer.innerHTML = `<p class="text-success">${result.message}</p>`;
+            } else {
+                resultContainer.innerHTML = `<p class="text-danger">Error: ${result.error}</p>`;
+            }
+        } catch (error) {
+            document.getElementById('create-user-result').innerHTML = `<p class="text-danger">Error: ${error.message}</p>`;
+        }
+    });
+</script>
+{% endblock %}
