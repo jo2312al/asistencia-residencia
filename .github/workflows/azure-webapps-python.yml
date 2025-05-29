@@ -1,7 +1,7 @@
-name: Build and deploy Python app to Azure Web App
+name: Build and deploy Python app to Azure Web App - innovatec-app
 
 env:
-  AZURE_WEBAPP_NAME: asisinnovatecitvh
+  AZURE_WEBAPP_NAME: asiinnovaitvh  # Cambia por el nombre de tu nuevo Azure Web App
   PYTHON_VERSION: '3.12'
 
 on:
@@ -23,7 +23,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          # cache: 'pip'  # Desactivado para evitar timeouts
 
       - name: Install dependencies
         run: |
@@ -31,7 +30,7 @@ jobs:
           for i in {1..3}; do pip install -r requirements.txt && break || sleep 5; done
 
       - name: List installed dependencies
-        run: pip list  # Para depurar problemas
+        run: pip list
 
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
@@ -40,6 +39,9 @@ jobs:
           path: |
             .
             !venv/
+            !.git/
+            !.gitignore
+            !*.md
 
   deploy:
     permissions:
@@ -47,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     environment:
-      name: 'Development'
+      name: 'Production'  # Cambiado a Production para reflejar el entorno
       url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
 
     steps:
