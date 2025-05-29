@@ -26,19 +26,19 @@ app.secret_key = "1b87d9937de10ed63301cf0442d0505e8d27fb5aca46c794a592e57cad78ee
 
 # Configura la conexión a la base de datos con los datos directamente
 db_config = {
-    'user': "hkkmjylqed@innovatec-mysql",
-    'password': "Josealberto2312",  # Reemplaza con tu contraseña real
-    'host': "innovatec-mysql.mysql.database.azure.com",
+   'user': 'admin2312',
+    'password': 'Josealberto2312',
+    'host': 'innovat.mysql.database.azure.com',
     'port': 3306,
-    'database': "innovatec",
-    'ssl_disabled': False,
-    'ssl_verify_cert': True,
-    'ssl_verify_identity': True
+    'database': 'innovatec',
+    'ssl_ca': './certs/DigiCertGlobalRootCA.crt.pem',  # Ruta local
+    'ssl_disabled': False
 }
 
 # Crea los managers para la base de datos, QR y asistencias
 db_manager = DatabaseManager(db_config)
 qr_manager = QRManager()
+
 attendance_manager = AttendanceManager(db_manager)
 
 # Configura el login
@@ -306,3 +306,6 @@ def generate_report():
         return jsonify({'success': True, 'report_path': report_path})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
