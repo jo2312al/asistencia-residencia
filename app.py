@@ -226,8 +226,8 @@ def download_all_qrs_pdf():
     page_width = letter[0]  # 8.5 pulgadas
     page_height = letter[1]  # 11 pulgadas
     margin = 0.5 * inch
-    usable_width = page_width - 2 * margin  # 7.5 pulgadas
-    usable_height = page_height - 2 * margin  # 10 pulgadas
+    usable_width = page_width - 4 * margin  # 7.5 pulgadas
+    usable_height = page_height - 4 * margin  # 10 pulgadas
     
     # Dimensiones de cada cuadro (2 columnas x 2 filas)
     cell_width = usable_width / 2  # 3.75 pulgadas por columna
