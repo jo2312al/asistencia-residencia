@@ -1,3 +1,5 @@
+from io import BytesIO
+import zipfile
 import pandas as pd
 from werkzeug.utils import secure_filename
 import uuid
@@ -128,7 +130,60 @@ def reports():
 @login_required
 def data():
     students = db_manager.get_all_students()
-    return render_template('data.html', students=students)
+    qr_manager = QRManager()  # Instancia de QRManager
+    students_with_qr = []
+
+    # Asegurarse de que cada estudiante tenga un código QR generado
+    for student in students:
+        matricula = student[4]  # La matrícula está en la posición 4
+        qr_path = os.path.join('static/qr_codes', f"{matricula}.png").replace('\\', '/')
+        
+        # Verificar si el archivo QR existe; si no, generarlo
+        if not os.path.exists(qr_path):
+            qr_manager.generate_qr(matricula)
+        
+        # Agregar el camino del QR al estudiante
+        student_dict = {
+            'id': student[0],
+            'first_name': student[1],
+            'last_name_p': student[2],
+            'last_name_m': student[3],
+            'matricula': student[4],
+            'carrera': student[5],
+            'project_id': student[6],
+            'qr_path': qr_path if os.path.exists(qr_path) else None
+        }
+        students_with_qr.append(student_dict)
+
+    return render_template('data.html', students=students_with_qr)
+
+@app.route('/download_all_qrs')
+@login_required
+def download_all_qrs():
+    students = db_manager.get_all_students()
+    qr_manager = QRManager()
+    memory_file = BytesIO()
+    
+    with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for student in students:
+            matricula = student[4]
+            qr_path = os.path.join('static/qr_codes', f"{matricula}.png").replace('\\', '/')
+            
+            # Generar el QR si no existe
+            if not os.path.exists(qr_path):
+                qr_manager.generate_qr(matricula)
+            
+            # Agregar el archivo al ZIP
+            if os.path.exists(qr_path):
+                zf.write(qr_path, arcname=f"qr_codes/{matricula}.png")
+    
+    memory_file.seek(0)
+    return send_file(
+        memory_file,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name='all_qr_codes.zip'
+    )
 
 @app.route('/generate_qr', methods=['POST'])
 @login_required
