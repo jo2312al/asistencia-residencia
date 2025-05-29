@@ -206,6 +206,9 @@ def download_all_qrs_pdf():
     elements = []
     styles = getSampleStyleSheet()
     
+    # Obtener todos los proyectos para mapear project_id a nombres
+    projects = {project[0]: project[1] for project in db_manager.get_all_projects()}
+    
     # Preparar los datos de los estudiantes
     student_data = []
     for student in students:
@@ -215,23 +218,33 @@ def download_all_qrs_pdf():
         if not os.path.exists(qr_path):
             qr_manager.generate_qr(matricula)
         
+        project_id = student[6]  # project_id está en la posición 6
+        project_name = projects.get(project_id, 'Sin proyecto') if project_id else 'Sin proyecto'
+        project_number = (project_id - 1) if project_id else None
+        
         if os.path.exists(qr_path):
             student_data.append({
                 'name': f"{student[1]} {student[2]} {student[3]}",
                 'matricula': matricula,
-                'qr_path': qr_path
+                'qr_path': qr_path,
+                'project_id': project_id,  # Añadir project_id para ordenamiento
+                'project_name': project_name,
+                'project_number': project_number
             })
+    
+    # Ordenar los estudiantes por project_id (None al final)
+    student_data.sort(key=lambda x: (x['project_id'] is None, x['project_id'] or float('inf')))
     
     # Dimensiones de la página y los cuadros
     page_width = letter[0]  # 8.5 pulgadas
     page_height = letter[1]  # 11 pulgadas
     margin = 0.5 * inch
-    usable_width = page_width - 4 * margin  # 7.5 pulgadas
-    usable_height = page_height - 4 * margin  # 10 pulgadas
+    usable_width = page_width - 2 * margin  # 7.5 pulgadas
+    usable_height = page_height - 2 * margin  # 10 pulgadas
     
     # Dimensiones de cada cuadro (2 columnas x 2 filas)
     cell_width = usable_width / 2  # 3.75 pulgadas por columna
-    cell_height = usable_height / 2  # 5 pulgadas por fila
+    cell_height = usable_height / 2.5 # 5 pulgadas por fila
     
     # Procesar los estudiantes en grupos de 4 (2x2)
     for i in range(0, len(student_data), 4):
@@ -253,6 +266,12 @@ def download_all_qrs_pdf():
             matricula_paragraph = Paragraph(f"Matrícula: {student['matricula']}", styles['Normal'])
             cell_elements.append([name_paragraph])
             cell_elements.append([matricula_paragraph])
+            
+            # Añadir nombre y número del proyecto
+            project_name_paragraph = Paragraph(f"Proyecto: {student['project_name']}", styles['Normal'])
+            project_number_paragraph = Paragraph(f"Número Proyecto: {student['project_number'] if student['project_number'] is not None else 'N/A'}", styles['Normal'])
+            cell_elements.append([project_name_paragraph])
+            cell_elements.append([project_number_paragraph])
             
             # Añadir un pequeño espacio
             cell_elements.append([Spacer(1, 0.5*inch)])
