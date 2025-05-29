@@ -94,7 +94,8 @@ def create_user():
             if db_manager.get_user(username):
                 return jsonify({'success': False, 'error': 'El usuario ya existe'}), 400
             
-            db_manager.add_user(username, password)  # La contraseña se hashea en database.py
+            hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
+            db_manager.add_user(username, hashed_password)  # Pasar la contraseña hasheada
             return jsonify({'success': True, 'message': 'Usuario creado exitosamente'})
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
