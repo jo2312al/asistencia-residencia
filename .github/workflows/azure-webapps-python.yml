@@ -1,7 +1,7 @@
 name: Build and deploy Python app to Azure Web App - innovatec-app
 
 env:
-  AZURE_WEBAPP_NAME: innovatec-app  # Cambia por el nombre de tu nuevo Azure Web App
+  AZURE_WEBAPP_NAME: asiinnovaitvh  # Cambia por el nombre de tu nuevo Azure Web App
   PYTHON_VERSION: '3.12'
 
 on:
