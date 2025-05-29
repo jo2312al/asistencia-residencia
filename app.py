@@ -13,9 +13,11 @@ from database import DatabaseManager
 from qr_manager import QRManager
 from attendance_manager import AttendanceManager
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.pdfgen import canvas
 import xlsxwriter
 from datetime import datetime
 
@@ -129,20 +131,41 @@ def reports():
 @app.route('/data')
 @login_required
 def data():
-    students = db_manager.get_all_students()
-    qr_manager = QRManager()  # Instancia de QRManager
-    students_with_qr = []
+    matricula_search = request.args.get('matricula', '').strip()
+    apellido_p_search = request.args.get('apellido_p', '').strip()
+    project_id_filter = request.args.get('project_id', '')
 
-    # Asegurarse de que cada estudiante tenga un código QR generado
-    for student in students:
-        matricula = student[4]  # La matrícula está en la posición 4
+    # Obtener el número de página desde los parámetros de la URL (por defecto página 1)
+    page = request.args.get('page', 1, type=int)
+    per_page = 10  # Número de estudiantes por página
+
+    projects = db_manager.get_all_projects()
+    all_students = db_manager.get_all_students_filtered(matricula_search, apellido_p_search, project_id_filter)
+    
+    # Calcular el total de páginas
+    total_students = len(all_students)
+    total_pages = (total_students + per_page - 1) // per_page  # Redondear hacia arriba
+    
+    # Calcular el rango de estudiantes para la página actual
+    start = (page - 1) * per_page
+    end = start + per_page
+    students_paginated = all_students[start:end]
+
+    students_with_qr = []
+    for student in students_paginated:
+        matricula = student[4]
         qr_path = os.path.join('static/qr_codes', f"{matricula}.png").replace('\\', '/')
         
-        # Verificar si el archivo QR existe; si no, generarlo
         if not os.path.exists(qr_path):
             qr_manager.generate_qr(matricula)
         
-        # Agregar el camino del QR al estudiante
+        project_name = None
+        if student[6]:
+            for project in projects:
+                if project[0] == student[6]:
+                    project_name = project[1]
+                    break
+
         student_dict = {
             'id': student[0],
             'first_name': student[1],
@@ -151,11 +174,122 @@ def data():
             'matricula': student[4],
             'carrera': student[5],
             'project_id': student[6],
+            'project_name': project_name,
             'qr_path': qr_path if os.path.exists(qr_path) else None
         }
         students_with_qr.append(student_dict)
 
-    return render_template('data.html', students=students_with_qr)
+    # Pasar la información de paginación a la plantilla
+    return render_template('data.html', 
+                          students=students_with_qr, 
+                          projects=projects, 
+                          page=page, 
+                          total_pages=total_pages, 
+                          matricula_search=matricula_search, 
+                          apellido_p_search=apellido_p_search, 
+                          project_id_filter=project_id_filter)
+
+@app.route('/download_all_qrs_pdf')
+@login_required
+def download_all_qrs_pdf():
+    students = db_manager.get_all_students()
+    qr_manager = QRManager()
+    
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    report_dir = 'static/reports'
+    if not os.path.exists(report_dir):
+        os.makedirs(report_dir)
+    pdf_path = os.path.join(report_dir, f'qr_codes_{timestamp}.pdf').replace('\\', '/')
+    
+    # Configurar el PDF con márgenes
+    doc = SimpleDocTemplate(pdf_path, pagesize=letter, leftMargin=0.5*inch, rightMargin=0.5*inch, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    # Preparar los datos de los estudiantes
+    student_data = []
+    for student in students:
+        matricula = student[4]
+        qr_path = os.path.join('static/qr_codes', f"{matricula}.png").replace('\\', '/')
+        
+        if not os.path.exists(qr_path):
+            qr_manager.generate_qr(matricula)
+        
+        if os.path.exists(qr_path):
+            student_data.append({
+                'name': f"{student[1]} {student[2]} {student[3]}",
+                'matricula': matricula,
+                'qr_path': qr_path
+            })
+    
+    # Dimensiones de la página y los cuadros
+    page_width = letter[0]  # 8.5 pulgadas
+    page_height = letter[1]  # 11 pulgadas
+    margin = 0.5 * inch
+    usable_width = page_width - 2 * margin  # 7.5 pulgadas
+    usable_height = page_height - 2 * margin  # 10 pulgadas
+    
+    # Dimensiones de cada cuadro (2 columnas x 2 filas)
+    cell_width = usable_width / 2  # 3.75 pulgadas por columna
+    cell_height = usable_height / 2  # 5 pulgadas por fila
+    
+    # Procesar los estudiantes en grupos de 4 (2x2)
+    for i in range(0, len(student_data), 4):
+        students_chunk = student_data[i:i+4]
+        
+        # Crear una cuadrícula 2x2 (2 filas, 2 columnas)
+        grid_data = [[None, None], [None, None]]  # Inicializar con celdas vacías
+        
+        for j, student in enumerate(students_chunk):
+            # Calcular la posición en la cuadrícula
+            row = j // 2  # 0 o 1 (fila)
+            col = j % 2   # 0 o 1 (columna)
+            
+            # Crear el contenido de la celda como una lista de elementos
+            cell_elements = []
+            
+            # Añadir nombre y matrícula (centrado)
+            name_paragraph = Paragraph(f"Nombre: {student['name']}", styles['Normal'])
+            matricula_paragraph = Paragraph(f"Matrícula: {student['matricula']}", styles['Normal'])
+            cell_elements.append([name_paragraph])
+            cell_elements.append([matricula_paragraph])
+            
+            # Añadir un pequeño espacio
+            cell_elements.append([Spacer(1, 0.5*inch)])
+            
+            # Añadir el QR (centrado)
+            qr_image = Image(student['qr_path'], width=2*inch, height=2*inch)
+            qr_image.hAlign = 'CENTER'
+            cell_elements.append([qr_image])
+            
+            # Crear un sub-Table para el contenido de la celda
+            sub_table = Table(cell_elements, colWidths=[cell_width])
+            sub_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),  # Centrar contenido
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),  # Alineación vertical al centro
+            ]))
+            
+            # Colocar el sub-Table en la posición correspondiente de la cuadrícula
+            grid_data[row][col] = sub_table
+        
+        # Crear la tabla principal de la cuadrícula 2x2
+        table = Table(grid_data, colWidths=[cell_width, cell_width], rowHeights=[cell_height, cell_height])
+        table.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),  # Bordes para cada celda
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),  # Centrar contenido
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),  # Alineación vertical al centro
+        ]))
+        
+        # Añadir la tabla al documento
+        elements.append(table)
+        
+        # Añadir un salto de página si no es la última página
+        if i + 4 < len(student_data):
+            elements.append(Spacer(1, 0.5*inch))
+    
+    # Construir el PDF
+    doc.build(elements)
+    return send_file(pdf_path, as_attachment=True, download_name='qr_codes.pdf')
 
 @app.route('/download_all_qrs')
 @login_required

@@ -7,46 +7,117 @@
         <h2 class="h5 mb-0">Lista de Estudiantes</h2>
     </div>
     <div class="card-body">
+        <!-- Formulario de búsqueda y filtro -->
+        <form method="GET" action="{{ url_for('data') }}" class="mb-3">
+            <div class="row">
+                <div class="col-md-3">
+                    <label for="matricula_search" class="form-label">Buscar por Matrícula</label>
+                    <input type="text" class="form-control" id="matricula_search" name="matricula" value="{{ matricula_search }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="apellido_p_search" class="form-label">Buscar por Apellido Paterno</label>
+                    <input type="text" class="form-control" id="apellido_p_search" name="apellido_p" value="{{ apellido_p_search }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="project_filter" class="form-label">Filtrar por Proyecto</label>
+                    <select class="form-control" id="project_filter" name="project_id">
+                        <option value="">Todos los proyectos</option>
+                        {% for project in projects %}
+                            <option value="{{ project[0] }}" {% if project_id_filter == project[0]|string %}selected{% endif %}>
+                                {{ project[1] }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary me-2">Buscar</button>
+                    <a href="{{ url_for('data') }}" class="btn btn-secondary">Limpiar</a>
+                </div>
+            </div>
+        </form>
+
+        <!-- Botones de descarga -->
         <div class="mb-3">
-            <a href="{{ url_for('download_all_qrs') }}" class="btn btn-primary">
-                <i class="bi bi-download"></i> Descargar Todos los Códigos QR
+            <a href="{{ url_for('download_all_qrs') }}" class="btn btn-primary me-2">
+                <i class="bi bi-download"></i> Descargar Todos los Códigos QR (ZIP)
+            </a>
+            <a href="{{ url_for('download_all_qrs_pdf') }}" class="btn btn-primary">
+                <i class="bi bi-file-earmark-pdf"></i> Descargar Todos los Códigos QR (PDF)
             </a>
         </div>
-        <table class="table table-striped">
-            <thead>
-                <tr>
-                    <th>Matrícula</th>
-                    <th>Nombre</th>
-                    <th>Apellido P</th>
-                    <th>Apellido M</th>
-                    <th>Carrera</th>
-                    <th>Proyecto</th>
-                    <th>Código QR</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for student in students %}
-                <tr>
-                    <td>{{ student['matricula'] }}</td>
-                    <td>{{ student['first_name'] }}</td>
-                    <td>{{ student['last_name_p'] }}</td>
-                    <td>{{ student['last_name_m'] }}</td>
-                    <td>{{ student['carrera'] }}</td>
-                    <td>{{ student['project_id'] or 'Sin proyecto' }}</td>
-                    <td>
-                        {% if student['qr_path'] %}
-                            <a href="{{ student['qr_path'] }}" download="{{ student['matricula'] }}.png">
-                                <img src="{{ student['qr_path'] }}" alt="QR {{ student['matricula'] }}" width="50" height="50">
-                                Descargar
-                            </a>
-                        {% else %}
-                            <span class="text-muted">No disponible</span>
-                        {% endif %}
-                    </td>
-                </tr>
+
+        <!-- Tabla de estudiantes con contenedor responsivo -->
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th scope="col">Matrícula</th>
+                        <th scope="col">Nombre</th>
+                        <th scope="col">Apellido P</th>
+                        <th scope="col">Apellido M</th>
+                        <th scope="col">Carrera</th>
+                        <th scope="col">Proyecto</th>
+                        <th scope="col">Código QR</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if students %}
+                        {% for student in students %}
+                        <tr>
+                            <td>{{ student['matricula'] }}</td>
+                            <td>{{ student['first_name'] }}</td>
+                            <td>{{ student['last_name_p'] }}</td>
+                            <td>{{ student['last_name_m'] }}</td>
+                            <td>{{ student['carrera'] }}</td>
+                            <td>{{ student['project_name'] or 'Sin proyecto' }}</td>
+                            <td>
+                                {% if student['qr_path'] %}
+                                    <a href="{{ student['qr_path'] }}" download="{{ student['matricula'] }}.png">
+                                        <img src="{{ student['qr_path'] }}" alt="QR {{ student['matricula'] }}" width="50" height="50">
+                                        <br>Descargar
+                                    </a>
+                                {% else %}
+                                    <span class="text-muted">No disponible</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center">No se encontraron estudiantes.</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Controles de paginación -->
+        {% if total_pages > 1 %}
+        <nav aria-label="Page navigation">
+            <ul class="pagination justify-content-center">
+                <!-- Botón "Anterior" -->
+                <li class="page-item {% if page == 1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('data', page=page-1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter) }}" aria-label="Previous">
+                        <span aria-hidden="true">«</span>
+                    </a>
+                </li>
+
+                <!-- Números de página -->
+                {% for p in range(1, total_pages + 1) %}
+                    <li class="page-item {% if p == page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('data', page=p, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter) }}">{{ p }}</a>
+                    </li>
                 {% endfor %}
-            </tbody>
-        </table>
+
+                <!-- Botón "Siguiente" -->
+                <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('data', page=page+1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter) }}" aria-label="Next">
+                        <span aria-hidden="true">»</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

@@ -257,3 +257,31 @@ class DatabaseManager:
         doc.build(elements)
 
         return report_path
+
+    def get_all_students_filtered(self, matricula_search='', apellido_p_search='', project_id_filter=''):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        
+        query = """
+            SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera, s.project_id
+            FROM students s
+            WHERE 1=1
+        """
+        params = []
+        
+        if matricula_search:
+            query += " AND s.matricula LIKE %s"
+            params.append(f"%{matricula_search}%")
+        
+        if apellido_p_search:
+            query += " AND s.last_name_p LIKE %s"
+            params.append(f"%{apellido_p_search}%")
+        
+        if project_id_filter:
+            query += " AND s.project_id = %s"
+            params.append(project_id_filter)
+        
+        c.execute(query, params)
+        students = c.fetchall()
+        conn.close()
+        return students
