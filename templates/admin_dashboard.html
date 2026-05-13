@@ -1,47 +1,60 @@
-{% extends "base.html" %}
-{% block title %}Dashboard Superadmin / Admin{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Dashboard Admin{% endblock %}
 {% block content %}
-<div class="row">
-    <div class="col-md-12">
-        <h2 class="mb-4">Panel de Administración</h2>
-    </div>
-</div>
-<div class="row mb-4">
+<h1 class="text-center tecn-blue-text mb-4">Panel Admin - Innovatec</h1>
+
+<div class="row g-3 mb-4">
     <div class="col-md-6">
-        <div class="card text-white bg-primary mb-3">
+        <div class="card shadow h-100">
             <div class="card-body">
-                <h5 class="card-title">Participantes Totales</h5>
-                <p class="card-text display-4">{{ total_students | default(0) }}</p>
+                <h5 class="card-title">Estudiantes registrados</h5>
+                <p class="display-6 mb-0">{{ total_students }}</p>
             </div>
         </div>
     </div>
     <div class="col-md-6">
-        <div class="card text-white bg-success mb-3">
+        <div class="card shadow h-100">
             <div class="card-body">
-                <h5 class="card-title">Asistencias Totales</h5>
-                <p class="card-text display-4">{{ total_attendance | default(0) }}</p>
+                <h5 class="card-title">Asistencias registradas</h5>
+                <p class="display-6 mb-0">{{ total_attendance }}</p>
             </div>
         </div>
     </div>
 </div>
-<div class="row">
-    <div class="col-md-12">
-        <h4>Crear Nuevo Proyecto</h4>
-        <form method="POST" action="{{ url_for('manage_projects') }}">
+
+<div class="card shadow">
+    <div class="card-header tecn-blue text-white">
+        <h2 class="h5 mb-0">Generar reporte de asistencias</h2>
+    </div>
+    <div class="card-body">
+        <form id="report-form" method="POST">
             <div class="mb-3">
-                <label>Nombre del Proyecto</label>
-                <input type="text" name="name" class="form-control" required>
+                <label for="start_date" class="form-label">Fecha de inicio</label>
+                <input type="date" class="form-control" id="start_date" name="start_date">
             </div>
             <div class="mb-3">
-                <label>Descripción</label>
-                <textarea name="description" class="form-control"></textarea>
+                <label for="end_date" class="form-label">Fecha de fin</label>
+                <input type="date" class="form-control" id="end_date" name="end_date">
             </div>
             <div class="mb-3">
-                <label>Lugar</label>
-                <input type="text" name="location" class="form-control">
+                <label for="project_id" class="form-label">Proyecto</label>
+                <select class="form-select" id="project_id" name="project_id">
+                    <option value="">Todos los proyectos</option>
+                    {% for project in projects %}
+                        <option value="{{ project[0] }}">{{ project[1] }}</option>
+                    {% endfor %}
+                </select>
             </div>
-            <button type="submit" class="btn btn-primary">Crear Proyecto</button>
+            <div class="mb-3">
+                <label for="format" class="form-label">Formato</label>
+                <select class="form-select" id="format" name="format" required>
+                    <option value="pdf">PDF</option>
+                    <option value="excel">Excel</option>
+                </select>
+            </div>
+            <button type="submit" class="btn tecn-blue text-white">Generar reporte</button>
         </form>
+        <div id="report-result" class="mt-3"></div>
     </div>
 </div>
 {% endblock %}
