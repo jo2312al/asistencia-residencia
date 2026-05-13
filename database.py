@@ -12,7 +12,7 @@ import xlsxwriter
 from werkzeug.security import generate_password_hash
 
 class DatabaseManager:
-    VALID_ROLES = {'superadmin', 'admin_proyecto', 'staff', 'consulta', 'participante', 'admin', 'guest'}
+    VALID_ROLES = {'admin', 'staff', 'guest'}
 
     def __init__(self, db_config):
         self.db_config = db_config
