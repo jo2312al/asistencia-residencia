@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Gestionar Proyectos{% endblock %}
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h2>Proyectos</h2>
+        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-secondary mt-2">Crear Nuevo Proyecto</a>
+        <table class="table mt-4">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Nombre</th>
+                    <th>Descripción</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for project in projects %}
+                <tr>
+                    <td>{{ project.id if project is mapping else project[0] }}</td>
+                    <td>{{ project.name if project is mapping else project[1] }}</td>
+                    <td>{{ project.description if project is mapping else project[2] }}</td>
+                    <td>
+                        <a href="{{ url_for('manage_project_fields', project_id=(project.id if project is mapping else project[0])) }}" class="btn btn-info btn-sm">Campos Personalizados</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
