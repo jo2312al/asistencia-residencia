@@ -8,6 +8,25 @@
             <h2 class="h5 mb-0">Escáner de Asistencia</h2>
         </div>
         <div class="card-body text-center">
+
+            <div class="row mb-4">
+                <div class="col-md-6 offset-md-3">
+                    <label>Proyecto Activo</label>
+                    <select id="projectSelect" class="form-control mb-2">
+                        <option value="">Cargando proyectos...</option>
+                    </select>
+
+                    <label>Tipo de Registro</label>
+                    <select id="eventType" class="form-control mb-2">
+                        <option value="entrada">Entrada</option>
+                        <option value="salida">Salida</option>
+                        <option value="taller">Taller</option>
+                        <option value="conferencia">Conferencia</option>
+                        <option value="entrega_material">Entrega de Material</option>
+                    </select>
+                </div>
+            </div>
+
             <video id="qr-video" class="img-fluid" autoplay playsinline></video>
             <canvas id="qr-canvas" style="display: none;"></canvas>
             <div id="qr-result" class="mt-3"></div>
@@ -34,5 +53,65 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Cargar proyectos
+        fetch('/get_projects')
+            .then(res => res.json())
+            .then(data => {
+                const select = document.getElementById('projectSelect');
+                select.innerHTML = '';
+                data.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.textContent = p.name;
+                    select.appendChild(opt);
+                });
+            });
+
+        // Store the original global function if needed by external scripts,
+        // or just override the behavior here if the external script calls registerAttendance(qrData)
+        window.registerAttendance = function(qrData) {
+            const projectId = document.getElementById('projectSelect').value;
+            const eventType = document.getElementById('eventType').value;
+
+            if(!projectId) {
+                alert('Selecciona un proyecto primero.');
+                return;
+            }
+
+            fetch('/register_attendance', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    qr_data: qrData,
+                    project_id: projectId,
+                    event_type: eventType
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const modalBody = document.getElementById('modal-message');
+                const modal = new bootstrap.Modal(document.getElementById('qrModal'));
+
+                if (data.success) {
+                    modalBody.innerHTML = `<div class="alert alert-success">${data.message}</div>`;
+                } else {
+                    modalBody.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                }
+                modal.show();
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+                const modalBody = document.getElementById('modal-message');
+                const modal = new bootstrap.Modal(document.getElementById('qrModal'));
+                modalBody.innerHTML = `<div class="alert alert-danger">Error de conexión</div>`;
+                modal.show();
+            });
+        };
+    });
+</script>
 <script src="{{ url_for('static', filename='js/scripts.js') }}"></script>
 {% endblock %}
