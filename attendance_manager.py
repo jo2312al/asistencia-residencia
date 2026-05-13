@@ -2,41 +2,76 @@ from datetime import datetime, date
 import mysql.connector
 import pytz
 
+# Define zona horaria de Ciudad de México
 mexico_tz = pytz.timezone('America/Mexico_City')
 
 class AttendanceManager:
     def __init__(self, db_manager):
         self.db_manager = db_manager
 
-    def register_attendance(self, token, project_id, event_type='entrada'):
+    def register_attendance(self, student_id):
+        student = self.db_manager.get_student_by_matricula(student_id)
+        if not student:
+            raise ValueError("Estudiante no encontrado")
+
+        student_id = student[0]
+
+        conn = mysql.connector.connect(**self.db_manager.db_config)
+        cursor = conn.cursor()
+
+        # Obtener la hora actual en zona horaria de México
+        now_mx = datetime.now(mexico_tz)
+        today_mx = now_mx.date()
+
+        # Verifica si ya registró asistencia hoy
+        cursor.execute(
+            "SELECT COUNT(*) FROM attendance WHERE student_id = %s AND DATE(CONVERT_TZ(timestamp, '+00:00', '-06:00')) = %s",
+            (student_id, today_mx)
+        )
+        if cursor.fetchone()[0] > 0:
+            conn.close()
+            raise ValueError("El estudiante ya registró asistencia hoy")
+
+        # Registrar la asistencia
+        cursor.execute(
+            "INSERT INTO attendance (student_id, timestamp) VALUES (%s, %s)",
+            (student_id, now_mx)
+        )
+        conn.commit()
+        conn.close()
+        return "Asistencia registrada exitosamente"
+
+    def register_attendance_by_matricula(self, matricula):
         try:
             conn = mysql.connector.connect(**self.db_manager.db_config)
             cursor = conn.cursor(dictionary=True)
 
-            cursor.execute("SELECT * FROM participants WHERE token = %s AND project_id = %s", (token, project_id))
-            participant = cursor.fetchone()
-            if not participant:
+            cursor.execute("SELECT id FROM students WHERE matricula = %s", (matricula,))
+            student = cursor.fetchone()
+            if not student:
                 conn.close()
-                return "Participante no encontrado o token inválido para este proyecto."
+                return "Estudiante no encontrado"
 
-            participant_id = participant['id']
+            student_id = student['id']
+
+            # Hora actual en zona horaria de México
             now_mx = datetime.now(mexico_tz)
             today_mx = now_mx.date()
 
+            # Verifica si ya registró asistencia hoy
             cursor.execute("""
-                SELECT id FROM attendance_events
-                WHERE participant_id = %s AND project_id = %s AND event_type = %s
-                AND DATE(CONVERT_TZ(timestamp, '+00:00', '-06:00')) = %s
-            """, (participant_id, project_id, event_type, today_mx))
-
+                SELECT id FROM attendance 
+                WHERE student_id = %s AND DATE(CONVERT_TZ(timestamp, '+00:00', '-06:00')) = %s
+            """, (student_id, today_mx))
             if cursor.fetchone():
                 conn.close()
-                return f"El participante ya registró su {event_type} hoy."
+                return "Este alumno ya fue tomado asistencia"
 
+            # Insertar registro de asistencia
             cursor.execute("""
-                INSERT INTO attendance_events (participant_id, project_id, event_type, timestamp)
-                VALUES (%s, %s, %s, %s)
-            """, (participant_id, project_id, event_type, now_mx))
+                INSERT INTO attendance (student_id, timestamp)
+                VALUES (%s, %s)
+            """, (student_id, now_mx))
             conn.commit()
             conn.close()
             return "Asistencia registrada exitosamente"
@@ -47,14 +82,14 @@ class AttendanceManager:
 
     def get_attendance_report(self, start_date=None, end_date=None, project_id=None):
         conn = mysql.connector.connect(**self.db_manager.db_config)
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
 
         query = """
-            SELECT p.full_name, p.email, p.phone, pr.name as project_name, a.event_type,
+            SELECT s.matricula, s.first_name, s.last_name_p, s.last_name_m, s.carrera, p.name, 
                    CONVERT_TZ(a.timestamp, '+00:00', '-06:00') AS local_timestamp
-            FROM attendance_events a
-            JOIN participants p ON a.participant_id = p.id
-            JOIN projects pr ON a.project_id = pr.id
+            FROM attendance a
+            JOIN students s ON a.student_id = s.id
+            LEFT JOIN projects p ON s.project_id = p.id
             WHERE 1=1
         """
         params = []
@@ -65,7 +100,7 @@ class AttendanceManager:
             query += " AND DATE(CONVERT_TZ(a.timestamp, '+00:00', '-06:00')) <= %s"
             params.append(end_date)
         if project_id:
-            query += " AND a.project_id = %s"
+            query += " AND s.project_id = %s"
             params.append(project_id)
 
         query += " ORDER BY a.timestamp DESC"
