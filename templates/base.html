@@ -14,9 +14,7 @@
 <body>
     <nav class="navbar navbar-expand-md navbar-dark tecn-blue">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('scan') }}">
-                <img src="data:image/png;base64,iVBORw0KGgoAAAANS..." alt="TecNM Logo">
-                <img src="data:image/png;base64,iVBORw1KGgoAAAANS..." alt="ITVH Logo">
+            <a class="navbar-brand" href="{{ url_for('role_home') if current_user.is_authenticated else url_for('login') }}">
                 Innovatec
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -25,31 +23,25 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
                     {% if current_user.is_authenticated %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('scan') }}">Escanear</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('data') }}">Datos</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('register') }}">Registrar</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('reports') }}">Reportes</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('create_user') }}">Crear Usuario</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link tecn-red text-white" href="{{ url_for('logout') }}">Cerrar Sesión</a>
-                    </li>
+                        {% if current_user.role == 'admin' %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_dashboard') }}">Dashboard</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('scan') }}">Escanear</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('data') }}">Datos</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('register') }}">Registrar</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('reports') }}">Reportes</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('create_user') }}">Usuarios</a></li>
+                        {% elif current_user.role == 'staff' %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('staff_dashboard') }}">Dashboard</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('scan') }}">Escanear</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('data') }}">Datos</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('reports') }}">Reportes</a></li>
+                        {% else %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('guest_dashboard') }}">Dashboard</a></li>
+                        {% endif %}
+                        <li class="nav-item"><span class="nav-link text-white-50">Rol: {{ current_user.role|upper }}</span></li>
+                        <li class="nav-item"><a class="nav-link tecn-red text-white" href="{{ url_for('logout') }}">Cerrar sesion</a></li>
                     {% else %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('login') }}">Iniciar Sesión</a>
-                    </li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('login') }}">Iniciar sesion</a></li>
                     {% endif %}
                 </ul>
             </div>

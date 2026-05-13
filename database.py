@@ -12,6 +12,8 @@ import xlsxwriter
 from werkzeug.security import generate_password_hash
 
 class DatabaseManager:
+    VALID_ROLES = {'admin', 'staff', 'guest'}
+
     def __init__(self, db_config):
         self.db_config = db_config
         self.init_db()
@@ -21,7 +23,8 @@ class DatabaseManager:
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS users (
             username VARCHAR(50) PRIMARY KEY,
-            password_hash VARCHAR(255) NOT NULL)''')
+            password_hash VARCHAR(255) NOT NULL,
+            role VARCHAR(20) NOT NULL DEFAULT 'guest')''')
         c.execute('''CREATE TABLE IF NOT EXISTS projects (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(100) UNIQUE NOT NULL,
@@ -40,23 +43,58 @@ class DatabaseManager:
             student_id VARCHAR(36),
             timestamp DATETIME,
             FOREIGN KEY (student_id) REFERENCES students(id))''')
+        c.execute("""
+            SELECT COUNT(*)
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = %s
+            AND TABLE_NAME = 'users'
+            AND COLUMN_NAME = 'role'
+        """, (self.db_config['database'],))
+        has_role_column = c.fetchone()[0] > 0
+        if not has_role_column:
+            c.execute("ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'guest'")
         conn.commit()
         conn.close()
+
+    def normalize_role(self, role):
+        role_value = (role or 'guest').strip().lower()
+        if role_value not in self.VALID_ROLES:
+            raise ValueError("Rol invalido. Roles permitidos: admin, staff, guest")
+        return role_value
 
     def get_user(self, username):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
-        c.execute("SELECT username, password_hash FROM users WHERE username = %s", (username,))
+        c.execute("SELECT username, password_hash, role FROM users WHERE username = %s", (username,))
         user = c.fetchone()
         conn.close()
         return user
 
-    def add_user(self, username, password_hash):
+    def add_user(self, username, password_hash, role='guest'):
+        role_value = self.normalize_role(role)
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
-        c.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)", (username, password_hash))
+        c.execute(
+            "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
+            (username, password_hash, role_value)
+        )
         conn.commit()
         conn.close()
+
+    def ensure_user(self, username, password_hash, role='guest'):
+        role_value = self.normalize_role(role)
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute("SELECT username FROM users WHERE username = %s", (username,))
+        exists = c.fetchone() is not None
+        if not exists:
+            c.execute(
+                "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
+                (username, password_hash, role_value)
+            )
+            conn.commit()
+        conn.close()
+        return not exists
 
     def add_student(self, student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id):
         conn = mysql.connector.connect(**self.db_config)

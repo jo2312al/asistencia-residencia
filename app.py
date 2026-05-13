@@ -1,152 +1,263 @@
 from io import BytesIO
-import zipfile
-import pandas as pd
-from werkzeug.utils import secure_filename
-import uuid
-from dotenv import load_dotenv
 import os
-from flask import Flask, request, jsonify, render_template, redirect, send_file, url_for, flash
-from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from werkzeug.security import generate_password_hash, check_password_hash
+import uuid
+import zipfile
+from datetime import datetime
+from functools import wraps
+
 import mysql.connector
-from database import DatabaseManager
-from qr_manager import QRManager
-from attendance_manager import AttendanceManager
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+import xlsxwriter
+from dotenv import load_dotenv
+from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.pdfgen import canvas
-import xlsxwriter
-from datetime import datetime
+from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from werkzeug.security import check_password_hash, generate_password_hash
 
-# Ya no necesitamos load_dotenv porque no usamos variables de entorno
-# load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
+from attendance_manager import AttendanceManager
+from database import DatabaseManager
+from qr_manager import QRManager
 
-# Crea la aplicación Flask
+VALID_ROLES = ("admin", "staff", "guest")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
+
+
+def str_to_bool(value, default=False):
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def get_db_config():
+    ssl_ca_path = os.getenv("DB_SSL_CA", os.path.join(BASE_DIR, "certs", "DigiCertGlobalRootCA.crt.pem"))
+    config = {
+        "user": os.getenv("DB_USER", "admin2312"),
+        "password": os.getenv("DB_PASSWORD", "Josealberto2312"),
+        "host": os.getenv("DB_HOST", "innovat.mysql.database.azure.com"),
+        "port": int(os.getenv("DB_PORT", "3306")),
+        "database": os.getenv("DB_NAME", "innovatec"),
+        "ssl_disabled": str_to_bool(os.getenv("DB_SSL_DISABLED"), default=False),
+    }
+    if ssl_ca_path and os.path.exists(ssl_ca_path):
+        config["ssl_ca"] = ssl_ca_path
+    return config
+
+
+def get_role_home_endpoint(role):
+    role_map = {
+        "admin": "admin_dashboard",
+        "staff": "staff_dashboard",
+        "guest": "guest_dashboard",
+    }
+    return role_map.get(role, "guest_dashboard")
+
+
 app = Flask(__name__)
-app.secret_key = "1b87d9937de10ed63301cf0442d0505e8d27fb5aca46c794a592e57cad78eedd"  # Puse la SECRET_KEY directamente
+app.secret_key = os.getenv("SECRET_KEY", "dev-secret-change-me")
 
-# Configura la conexión a la base de datos con los datos directamente
-db_config = {
-   'user': 'admin2312',
-    'password': 'Josealberto2312',
-    'host': 'innovat.mysql.database.azure.com',
-    'port': 3306,
-    'database': 'innovatec',
-    'ssl_ca': './certs/DigiCertGlobalRootCA.crt.pem',  # Ruta local
-    'ssl_disabled': False
-}
-
-# Crea los managers para la base de datos, QR y asistencias
+db_config = get_db_config()
 db_manager = DatabaseManager(db_config)
 qr_manager = QRManager()
-
 attendance_manager = AttendanceManager(db_manager)
 
-# Configura el login
+default_admin_username = os.getenv("ADMIN_USERNAME")
+default_admin_password = os.getenv("ADMIN_PASSWORD")
+if default_admin_username and default_admin_password:
+    default_hash = generate_password_hash(default_admin_password, method="pbkdf2:sha256")
+    db_manager.ensure_user(default_admin_username, default_hash, role="admin")
+
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'login'
+login_manager.login_view = "login"
+
 
 class User(UserMixin):
-    def __init__(self, username):
+    def __init__(self, username, role="guest"):
         self.id = username
+        self.role = role
+
+    @property
+    def is_admin(self):
+        return self.role == "admin"
+
+    @property
+    def is_staff(self):
+        return self.role == "staff"
+
+    @property
+    def is_guest(self):
+        return self.role == "guest"
+
+
+def role_required(*roles, api=False):
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapped(*args, **kwargs):
+            if current_user.role not in roles:
+                message = "No autorizado para esta accion"
+                if api or request.is_json:
+                    return jsonify({"success": False, "error": message}), 403
+                flash(message, "warning")
+                return redirect(url_for("role_home"))
+            return view_func(*args, **kwargs)
+
+        return wrapped
+
+    return decorator
+
+
+@app.context_processor
+def inject_template_helpers():
+    return {"VALID_ROLES": VALID_ROLES}
+
 
 @login_manager.user_loader
 def load_user(username):
     user_data = db_manager.get_user(username)
     if user_data:
-        return User(username)
+        return User(user_data[0], user_data[2] or "guest")
     return None
 
-@app.route('/')
-def index():
-    return redirect(url_for('login'))
 
-@app.route('/login', methods=['GET', 'POST'])
+@app.route("/")
+def index():
+    if current_user.is_authenticated:
+        return redirect(url_for("role_home"))
+    return redirect(url_for("login"))
+
+
+@app.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+        return redirect(url_for("role_home"))
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
         user_data = db_manager.get_user(username)
         if user_data and check_password_hash(user_data[1], password):
-            login_user(User(username))
-            return redirect(url_for('dashboard'))
-        flash('Usuario o contraseña incorrectos')
-    return render_template('login.html')
+            login_user(User(user_data[0], user_data[2] or "guest"))
+            return redirect(url_for("role_home"))
+        flash("Usuario o contrasena incorrectos", "danger")
+    return render_template("login.html")
 
-@app.route('/logout')
+
+@app.route("/logout")
 @login_required
 def logout():
     logout_user()
-    return redirect(url_for('login'))
+    return redirect(url_for("login"))
 
-@app.route('/create_user', methods=['GET', 'POST'])
+
+@app.route("/home")
 @login_required
-def create_user():
-    if request.method == 'POST':
-        try:
-            username = request.form.get('username')
-            password = request.form.get('password')
-            if not username or not password:
-                return jsonify({'success': False, 'error': 'Usuario y contraseña son requeridos'}), 400
-            
-            if db_manager.get_user(username):
-                return jsonify({'success': False, 'error': 'El usuario ya existe'}), 400
-            
-            hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
-            db_manager.add_user(username, hashed_password)  # Pasar la contraseña hasheada
-            return jsonify({'success': True, 'message': 'Usuario creado exitosamente'})
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500
-    return render_template('create_user.html')
+def role_home():
+    return redirect(url_for(get_role_home_endpoint(current_user.role)))
 
-@app.route('/register')
-@login_required
-def register():
-    projects = db_manager.get_all_projects()
-    return render_template('register.html', projects=projects)
 
-@app.route('/scan')
-@login_required
-def scan():
-    return render_template('scan.html')
-
-@app.route('/dashboard')
+@app.route("/dashboard")
 @login_required
 def dashboard():
-    projects = db_manager.get_all_projects()
-    return render_template('dashboard.html', projects=projects)
+    return redirect(url_for("role_home"))
 
-@app.route('/reports')
+
+@app.route("/admin/dashboard")
 @login_required
+@role_required("admin")
+def admin_dashboard():
+    projects = db_manager.get_all_projects()
+    return render_template(
+        "admin_dashboard.html",
+        projects=projects,
+        total_students=db_manager.get_total_students(),
+        total_attendance=db_manager.get_total_attendance(),
+    )
+
+
+@app.route("/staff/dashboard")
+@login_required
+@role_required("admin", "staff")
+def staff_dashboard():
+    projects = db_manager.get_all_projects()
+    return render_template("staff_dashboard.html", projects=projects)
+
+
+@app.route("/guest/dashboard")
+@login_required
+@role_required("admin", "staff", "guest")
+def guest_dashboard():
+    return render_template("guest_dashboard.html")
+
+
+@app.route("/create_user", methods=["GET", "POST"])
+@login_required
+@role_required("admin")
+def create_user():
+    if request.method == "POST":
+        try:
+            username = request.form.get("username")
+            password = request.form.get("password")
+            role = request.form.get("role", "guest")
+            if not username or not password:
+                return jsonify({"success": False, "error": "Usuario y contrasena son requeridos"}), 400
+
+            if db_manager.get_user(username):
+                return jsonify({"success": False, "error": "El usuario ya existe"}), 400
+
+            hashed_password = generate_password_hash(password, method="pbkdf2:sha256")
+            db_manager.add_user(username, hashed_password, role=role)
+            return jsonify({"success": True, "message": "Usuario creado exitosamente"})
+        except ValueError as e:
+            return jsonify({"success": False, "error": str(e)}), 400
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
+    return render_template("create_user.html", roles=VALID_ROLES)
+
+
+@app.route("/register")
+@login_required
+@role_required("admin")
+def register():
+    projects = db_manager.get_all_projects()
+    return render_template("register.html", projects=projects)
+
+
+@app.route("/scan")
+@login_required
+@role_required("admin", "staff")
+def scan():
+    return render_template("scan.html")
+
+
+@app.route("/reports")
+@login_required
+@role_required("admin", "staff")
 def reports():
     projects = db_manager.get_all_projects()
-    return render_template('reports.html', projects=projects)
+    return render_template("reports.html", projects=projects)
 
-@app.route('/data')
+
+@app.route("/data")
 @login_required
+@role_required("admin", "staff")
 def data():
-    matricula_search = request.args.get('matricula', '').strip()
-    apellido_p_search = request.args.get('apellido_p', '').strip()
-    project_id_filter = request.args.get('project_id', '')
+    matricula_search = request.args.get("matricula", "").strip()
+    apellido_p_search = request.args.get("apellido_p", "").strip()
+    project_id_filter = request.args.get("project_id", "")
 
-    # Obtener el número de página desde los parámetros de la URL (por defecto página 1)
-    page = request.args.get('page', 1, type=int)
-    per_page = 10  # Número de estudiantes por página
+    page = request.args.get("page", 1, type=int)
+    per_page = 10
 
     projects = db_manager.get_all_projects()
     all_students = db_manager.get_all_students_filtered(matricula_search, apellido_p_search, project_id_filter)
-    
-    # Calcular el total de páginas
+
     total_students = len(all_students)
-    total_pages = (total_students + per_page - 1) // per_page  # Redondear hacia arriba
-    
-    # Calcular el rango de estudiantes para la página actual
+    total_pages = (total_students + per_page - 1) // per_page
+
     start = (page - 1) * per_page
     end = start + per_page
     students_paginated = all_students[start:end]
@@ -154,11 +265,11 @@ def data():
     students_with_qr = []
     for student in students_paginated:
         matricula = student[4]
-        qr_path = os.path.join('static/qr_codes', f"{matricula}.png").replace('\\', '/')
-        
+        qr_path = os.path.join("static/qr_codes", f"{matricula}.png").replace("\\", "/")
+
         if not os.path.exists(qr_path):
             qr_manager.generate_qr(matricula)
-        
+
         project_name = None
         if student[6]:
             for project in projects:
@@ -167,189 +278,187 @@ def data():
                     break
 
         student_dict = {
-            'id': student[0],
-            'first_name': student[1],
-            'last_name_p': student[2],
-            'last_name_m': student[3],
-            'matricula': student[4],
-            'carrera': student[5],
-            'project_id': student[6],
-            'project_name': project_name,
-            'qr_path': qr_path if os.path.exists(qr_path) else None
+            "id": student[0],
+            "first_name": student[1],
+            "last_name_p": student[2],
+            "last_name_m": student[3],
+            "matricula": student[4],
+            "carrera": student[5],
+            "project_id": student[6],
+            "project_name": project_name,
+            "qr_path": qr_path if os.path.exists(qr_path) else None,
         }
         students_with_qr.append(student_dict)
 
-    # Pasar la información de paginación a la plantilla
-    return render_template('data.html', 
-                          students=students_with_qr, 
-                          projects=projects, 
-                          page=page, 
-                          total_pages=total_pages, 
-                          matricula_search=matricula_search, 
-                          apellido_p_search=apellido_p_search, 
-                          project_id_filter=project_id_filter)
+    return render_template(
+        "data.html",
+        students=students_with_qr,
+        projects=projects,
+        page=page,
+        total_pages=total_pages,
+        matricula_search=matricula_search,
+        apellido_p_search=apellido_p_search,
+        project_id_filter=project_id_filter,
+    )
 
-@app.route('/download_all_qrs_pdf')
+
+@app.route("/download_all_qrs_pdf")
 @login_required
+@role_required("admin", "staff")
 def download_all_qrs_pdf():
     students = db_manager.get_all_students()
-    qr_manager = QRManager()
-    
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    report_dir = 'static/reports'
+    local_qr_manager = QRManager()
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_dir = "static/reports"
     if not os.path.exists(report_dir):
         os.makedirs(report_dir)
-    pdf_path = os.path.join(report_dir, f'qr_codes_{timestamp}.pdf').replace('\\', '/')
-    
-    # Configurar el PDF con márgenes
-    doc = SimpleDocTemplate(pdf_path, pagesize=letter, leftMargin=0.5*inch, rightMargin=0.5*inch, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    pdf_path = os.path.join(report_dir, f"qr_codes_{timestamp}.pdf").replace("\\", "/")
+
+    doc = SimpleDocTemplate(
+        pdf_path,
+        pagesize=letter,
+        leftMargin=0.5 * inch,
+        rightMargin=0.5 * inch,
+        topMargin=0.5 * inch,
+        bottomMargin=0.5 * inch,
+    )
     elements = []
     styles = getSampleStyleSheet()
-    
-    # Obtener todos los proyectos para mapear project_id a nombres
+
     projects = {project[0]: project[1] for project in db_manager.get_all_projects()}
-    
-    # Preparar los datos de los estudiantes
+
     student_data = []
     for student in students:
         matricula = student[4]
-        qr_path = os.path.join('static/qr_codes', f"{matricula}.png").replace('\\', '/')
-        
+        qr_path = os.path.join("static/qr_codes", f"{matricula}.png").replace("\\", "/")
+
         if not os.path.exists(qr_path):
-            qr_manager.generate_qr(matricula)
-        
-        project_id = student[6]  # project_id está en la posición 6
-        project_name = projects.get(project_id, 'Sin proyecto') if project_id else 'Sin proyecto'
+            local_qr_manager.generate_qr(matricula)
+
+        project_id = student[6]
+        project_name = projects.get(project_id, "Sin proyecto") if project_id else "Sin proyecto"
         project_number = (project_id - 1) if project_id else None
-        
+
         if os.path.exists(qr_path):
-            student_data.append({
-                'name': f"{student[1]} {student[2]} {student[3]}",
-                'matricula': matricula,
-                'qr_path': qr_path,
-                'project_id': project_id,  # Añadir project_id para ordenamiento
-                'project_name': project_name,
-                'project_number': project_number
-            })
-    
-    # Ordenar los estudiantes por project_id (None al final)
-    student_data.sort(key=lambda x: (x['project_id'] is None, x['project_id'] or float('inf')))
-    
-    # Dimensiones de la página y los cuadros
-    page_width = letter[0]  # 8.5 pulgadas
-    page_height = letter[1]  # 11 pulgadas
+            student_data.append(
+                {
+                    "name": f"{student[1]} {student[2]} {student[3]}",
+                    "matricula": matricula,
+                    "qr_path": qr_path,
+                    "project_id": project_id,
+                    "project_name": project_name,
+                    "project_number": project_number,
+                }
+            )
+
+    student_data.sort(key=lambda x: (x["project_id"] is None, x["project_id"] or float("inf")))
+
+    page_width = letter[0]
+    page_height = letter[1]
     margin = 0.5 * inch
-    usable_width = page_width - 2 * margin  # 7.5 pulgadas
-    usable_height = page_height - 2 * margin  # 10 pulgadas
-    
-    # Dimensiones de cada cuadro (2 columnas x 2 filas)
-    cell_width = usable_width / 2  # 3.75 pulgadas por columna
-    cell_height = usable_height / 2.5 # 5 pulgadas por fila
-    
-    # Procesar los estudiantes en grupos de 4 (2x2)
+    usable_width = page_width - 2 * margin
+    usable_height = page_height - 2 * margin
+
+    cell_width = usable_width / 2
+    cell_height = usable_height / 2.5
+
     for i in range(0, len(student_data), 4):
-        students_chunk = student_data[i:i+4]
-        
-        # Crear una cuadrícula 2x2 (2 filas, 2 columnas)
-        grid_data = [[None, None], [None, None]]  # Inicializar con celdas vacías
-        
+        students_chunk = student_data[i : i + 4]
+        grid_data = [[None, None], [None, None]]
+
         for j, student in enumerate(students_chunk):
-            # Calcular la posición en la cuadrícula
-            row = j // 2  # 0 o 1 (fila)
-            col = j % 2   # 0 o 1 (columna)
-            
-            # Crear el contenido de la celda como una lista de elementos
+            row = j // 2
+            col = j % 2
             cell_elements = []
-            
-            # Añadir nombre y matrícula (centrado)
-            name_paragraph = Paragraph(f"Nombre: {student['name']}", styles['Normal'])
-            matricula_paragraph = Paragraph(f"Matrícula: {student['matricula']}", styles['Normal'])
+
+            name_paragraph = Paragraph(f"Nombre: {student['name']}", styles["Normal"])
+            matricula_paragraph = Paragraph(f"Matricula: {student['matricula']}", styles["Normal"])
             cell_elements.append([name_paragraph])
             cell_elements.append([matricula_paragraph])
-            
-            # Añadir nombre y número del proyecto
-            project_name_paragraph = Paragraph(f"Proyecto: {student['project_name']}", styles['Normal'])
-            project_number_paragraph = Paragraph(f"Número Proyecto: {student['project_number'] if student['project_number'] is not None else 'N/A'}", styles['Normal'])
+
+            project_name_paragraph = Paragraph(f"Proyecto: {student['project_name']}", styles["Normal"])
+            number_text = student["project_number"] if student["project_number"] is not None else "N/A"
+            project_number_paragraph = Paragraph(f"Numero Proyecto: {number_text}", styles["Normal"])
             cell_elements.append([project_name_paragraph])
             cell_elements.append([project_number_paragraph])
-            
-            # Añadir un pequeño espacio
-            cell_elements.append([Spacer(1, 0.5*inch)])
-            
-            # Añadir el QR (centrado)
-            qr_image = Image(student['qr_path'], width=2*inch, height=2*inch)
-            qr_image.hAlign = 'CENTER'
-            cell_elements.append([qr_image])
-            
-            # Crear un sub-Table para el contenido de la celda
-            sub_table = Table(cell_elements, colWidths=[cell_width])
-            sub_table.setStyle(TableStyle([
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),  # Centrar contenido
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),  # Alineación vertical al centro
-            ]))
-            
-            # Colocar el sub-Table en la posición correspondiente de la cuadrícula
-            grid_data[row][col] = sub_table
-        
-        # Crear la tabla principal de la cuadrícula 2x2
-        table = Table(grid_data, colWidths=[cell_width, cell_width], rowHeights=[cell_height, cell_height])
-        table.setStyle(TableStyle([
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),  # Bordes para cada celda
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),  # Centrar contenido
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),  # Alineación vertical al centro
-        ]))
-        
-        # Añadir la tabla al documento
-        elements.append(table)
-        
-        # Añadir un salto de página si no es la última página
-        if i + 4 < len(student_data):
-            elements.append(Spacer(1, 0.5*inch))
-    
-    # Construir el PDF
-    doc.build(elements)
-    return send_file(pdf_path, as_attachment=True, download_name='qr_codes.pdf')
+            cell_elements.append([Spacer(1, 0.5 * inch)])
 
-@app.route('/download_all_qrs')
+            qr_image = Image(student["qr_path"], width=2 * inch, height=2 * inch)
+            qr_image.hAlign = "CENTER"
+            cell_elements.append([qr_image])
+
+            sub_table = Table(cell_elements, colWidths=[cell_width])
+            sub_table.setStyle(
+                TableStyle(
+                    [
+                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ]
+                )
+            )
+            grid_data[row][col] = sub_table
+
+        table = Table(grid_data, colWidths=[cell_width, cell_width], rowHeights=[cell_height, cell_height])
+        table.setStyle(
+            TableStyle(
+                [
+                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ]
+            )
+        )
+        elements.append(table)
+
+        if i + 4 < len(student_data):
+            elements.append(Spacer(1, 0.5 * inch))
+
+    doc.build(elements)
+    return send_file(pdf_path, as_attachment=True, download_name="qr_codes.pdf")
+
+
+@app.route("/download_all_qrs")
 @login_required
+@role_required("admin", "staff")
 def download_all_qrs():
     students = db_manager.get_all_students()
-    qr_manager = QRManager()
+    local_qr_manager = QRManager()
     memory_file = BytesIO()
-    
-    with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+
+    with zipfile.ZipFile(memory_file, "w", zipfile.ZIP_DEFLATED) as zf:
         for student in students:
             matricula = student[4]
-            qr_path = os.path.join('static/qr_codes', f"{matricula}.png").replace('\\', '/')
-            
-            # Generar el QR si no existe
+            qr_path = os.path.join("static/qr_codes", f"{matricula}.png").replace("\\", "/")
+
             if not os.path.exists(qr_path):
-                qr_manager.generate_qr(matricula)
-            
-            # Agregar el archivo al ZIP
+                local_qr_manager.generate_qr(matricula)
+
             if os.path.exists(qr_path):
                 zf.write(qr_path, arcname=f"qr_codes/{matricula}.png")
-    
+
     memory_file.seek(0)
     return send_file(
         memory_file,
-        mimetype='application/zip',
+        mimetype="application/zip",
         as_attachment=True,
-        download_name='all_qr_codes.zip'
+        download_name="all_qr_codes.zip",
     )
 
-@app.route('/generate_qr', methods=['POST'])
+
+@app.route("/generate_qr", methods=["POST"])
 @login_required
+@role_required("admin", api=True)
 def generate_qr():
     data = request.form
     student_id = str(uuid.uuid4())
     try:
-        first_name = data['first_name']
-        last_name_p = data['last_name_p']
-        last_name_m = data['last_name_m']
-        matricula = data['matricula']
-        carrera = data['carrera']
-        project_id = data.get('project_id') or None
+        first_name = data["first_name"]
+        last_name_p = data["last_name_p"]
+        last_name_m = data["last_name_m"]
+        matricula = data["matricula"]
+        carrera = data["carrera"]
+        project_id = data.get("project_id") or None
 
         if project_id:
             conn = mysql.connector.connect(**db_config)
@@ -357,146 +466,172 @@ def generate_qr():
             c.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
             if not c.fetchone():
                 conn.close()
-                return jsonify({'success': False, 'error': f'Proyecto con ID {project_id} no existe'}), 400
+                return jsonify({"success": False, "error": f"Proyecto con ID {project_id} no existe"}), 400
             conn.close()
 
         db_manager.add_student(student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id)
         qr_path = qr_manager.generate_qr(matricula)
-        return jsonify({'success': True, 'qr_path': qr_path})
+        return jsonify({"success": True, "qr_path": qr_path})
     except KeyError as e:
-        return jsonify({'success': False, 'error': f'Falta el campo {str(e)}'}), 400
+        return jsonify({"success": False, "error": f"Falta el campo {str(e)}"}), 400
     except mysql.connector.Error as e:
         if e.errno == 1062:
-            return jsonify({'success': False, 'error': f'La matrícula {matricula} ya está registrada'}), 400
-        return jsonify({'success': False, 'error': 'Error en la base de datos'}), 500
+            return jsonify({"success": False, "error": f"La matricula {matricula} ya esta registrada"}), 400
+        return jsonify({"success": False, "error": "Error en la base de datos"}), 500
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/upload_excel', methods=['POST'])
+
+@app.route("/upload_excel", methods=["POST"])
 @login_required
+@role_required("admin", api=True)
 def upload_excel():
     try:
-        if 'file' not in request.files:
-            return jsonify({'success': False, 'error': 'No se proporcionó un archivo Excel'}), 400
-        file = request.files['file']
-        project_id = request.form.get('project_id') or None
-        if file.filename == '':
-            return jsonify({'success': False, 'error': 'No se seleccionó un archivo'}), 400
+        if "file" in request.files:
+            file = request.files["file"]
+        elif "excel_file" in request.files:
+            file = request.files["excel_file"]
+        else:
+            return jsonify({"success": False, "error": "No se proporciono un archivo Excel"}), 400
+
+        project_id = request.form.get("project_id") or None
+        if file.filename == "":
+            return jsonify({"success": False, "error": "No se selecciono un archivo"}), 400
         if project_id:
             conn = mysql.connector.connect(**db_config)
             c = conn.cursor()
             c.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
             if not c.fetchone():
                 conn.close()
-                return jsonify({'success': False, 'error': 'Proyecto no encontrado'}), 400
+                return jsonify({"success": False, "error": "Proyecto no encontrado"}), 400
             conn.close()
 
         result = db_manager.upload_students_from_excel(file, project_id)
-        return jsonify({'success': True, 'message': result})
+        return jsonify({"success": True, "message": result})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/register_attendance', methods=['POST'])
+
+@app.route("/register_attendance", methods=["POST"])
 @login_required
+@role_required("admin", "staff", api=True)
 def register_attendance():
     try:
         data = request.get_json()
-        if not data or 'qr_data' not in data:
-            return jsonify({'success': False, 'error': 'Datos de QR no proporcionados'}), 400
-        
-        qr_data = data['qr_data']
+        if not data or "qr_data" not in data:
+            return jsonify({"success": False, "error": "Datos de QR no proporcionados"}), 400
+
+        qr_data = data["qr_data"]
         result = attendance_manager.register_attendance_by_matricula(qr_data)
         if result == "Asistencia registrada exitosamente":
-            return jsonify({'success': True, 'message': result})
-        elif result == "Este alumno ya fue tomado asistencia":
-            return jsonify({'success': False, 'error': result})
-        else:
-            return jsonify({'success': False, 'error': result}), 400
+            return jsonify({"success": True, "message": result})
+        if result == "Este alumno ya fue tomado asistencia":
+            return jsonify({"success": False, "error": result})
+        return jsonify({"success": False, "error": result}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/get_projects')
+
+@app.route("/get_projects")
 @login_required
+@role_required("admin", "staff", api=True)
 def get_projects():
     projects = db_manager.get_all_projects()
-    return jsonify([{'id': p.id, 'name': p.name} for p in projects])
+    return jsonify([{"id": p[0], "name": p[1]} for p in projects])
 
-@app.route('/export_excel')
+
+@app.route("/export_excel")
 @login_required
+@role_required("admin", "staff")
 def export_excel():
-    project_id = request.args.get('project_id')
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
+    project_id = request.args.get("project_id")
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
     try:
         file_path = db_manager.export_attendance_to_excel(project_id, start_date, end_date)
         return send_file(file_path, as_attachment=True)
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/export_pdf')
+
+@app.route("/export_pdf")
 @login_required
+@role_required("admin", "staff")
 def export_pdf():
-    project_id = request.args.get('project_id')
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
+    project_id = request.args.get("project_id")
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
     try:
         file_path = db_manager.export_attendance_to_pdf(project_id, start_date, end_date)
         return send_file(file_path, as_attachment=True)
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/generate_report', methods=['POST'])
+
+@app.route("/generate_report", methods=["POST"])
 @login_required
+@role_required("admin", "staff", api=True)
 def generate_report():
     try:
         data = request.form
-        start_date = data.get('start_date') or None
-        end_date = data.get('end_date') or None
-        project_id = data.get('project_id') or None
-        format_type = data.get('format')
+        start_date = data.get("start_date") or None
+        end_date = data.get("end_date") or None
+        project_id = data.get("project_id") or None
+        format_type = data.get("format")
 
         report_data = attendance_manager.get_attendance_report(start_date, end_date, project_id)
         if not report_data:
-            return jsonify({'success': False, 'error': 'No hay datos para el reporte'}), 400
+            return jsonify({"success": False, "error": "No hay datos para el reporte"}), 400
 
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        report_dir = 'static/reports'
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_dir = "static/reports"
         if not os.path.exists(report_dir):
             os.makedirs(report_dir)
 
-        if format_type == 'pdf':
-            report_path = os.path.join(report_dir, f'report_{timestamp}.pdf').replace('\\', '/')
+        if format_type == "pdf":
+            report_path = os.path.join(report_dir, f"report_{timestamp}.pdf").replace("\\", "/")
             doc = SimpleDocTemplate(report_path, pagesize=letter)
             elements = []
             styles = getSampleStyleSheet()
-            elements.append(Paragraph("Reporte de Asistencias - Innovatec TecNM", styles['Title']))
+            elements.append(Paragraph("Reporte de Asistencias - Innovatec TecNM", styles["Title"]))
 
-            data = [['Matrícula', 'Nombre', 'Apellido P', 'Apellido M', 'Carrera', 'Proyecto', 'Fecha/Hora']]
+            table_data = [["Matricula", "Nombre", "Apellido P", "Apellido M", "Carrera", "Proyecto", "Fecha/Hora"]]
             for row in report_data:
-                data.append([
-                    row[0], row[1], row[2], row[3], row[4], row[5] or 'Sin proyecto', row[6].strftime('%Y-%m-%d %H:%M:%S')
-                ])
+                table_data.append(
+                    [
+                        row[0],
+                        row[1],
+                        row[2],
+                        row[3],
+                        row[4],
+                        row[5] or "Sin proyecto",
+                        row[6].strftime("%Y-%m-%d %H:%M:%S"),
+                    ]
+                )
 
-            table = Table(data)
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 12),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black)
-            ]))
+            table = Table(table_data)
+            table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, 0), 12),
+                        ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+                        ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                    ]
+                )
+            )
             elements.append(table)
             doc.build(elements)
-
-        elif format_type == 'excel':
-            report_path = os.path.join(report_dir, f'report_{timestamp}.xlsx').replace('\\', '/')
+        elif format_type == "excel":
+            report_path = os.path.join(report_dir, f"report_{timestamp}.xlsx").replace("\\", "/")
             workbook = xlsxwriter.Workbook(report_path)
             worksheet = workbook.add_worksheet()
-            worksheet.write('A1', 'Reporte de Asistencias - Innovatec TecNM')
-            headers = ['Matrícula', 'Nombre', 'Apellido P', 'Apellido M', 'Carrera', 'Proyecto', 'Fecha/Hora']
+            worksheet.write("A1", "Reporte de Asistencias - Innovatec TecNM")
+            headers = ["Matricula", "Nombre", "Apellido P", "Apellido M", "Carrera", "Proyecto", "Fecha/Hora"]
             for col, header in enumerate(headers):
                 worksheet.write(1, col, header)
             for row_idx, row in enumerate(report_data, 2):
@@ -505,16 +640,20 @@ def generate_report():
                 worksheet.write(row_idx, 2, row[2])
                 worksheet.write(row_idx, 3, row[3])
                 worksheet.write(row_idx, 4, row[4])
-                worksheet.write(row_idx, 5, row[5] or 'Sin proyecto')
-                worksheet.write(row_idx, 6, row[6].strftime('%Y-%m-%d %H:%M:%S'))
+                worksheet.write(row_idx, 5, row[5] or "Sin proyecto")
+                worksheet.write(row_idx, 6, row[6].strftime("%Y-%m-%d %H:%M:%S"))
             workbook.close()
-
         else:
-            return jsonify({'success': False, 'error': 'Formato no soportado'}), 400
+            return jsonify({"success": False, "error": "Formato no soportado"}), 400
 
-        return jsonify({'success': True, 'report_path': report_path})
+        return jsonify({"success": True, "report_path": report_path})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(debug=True)
+
+if __name__ == "__main__":
+    app.run(
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "5000")),
+        debug=str_to_bool(os.getenv("FLASK_DEBUG"), default=True),
+    )
