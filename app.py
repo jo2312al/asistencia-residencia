@@ -49,6 +49,10 @@ def get_db_config():
 
 
 def get_role_home_endpoint(role):
+    # Fallbacks for legacy users
+    if role == 'admin': role = 'superadmin'
+    if role == 'guest': role = 'participante'
+
     role_map = {
         "admin": "admin_dashboard",
         "staff": "staff_dashboard",
@@ -79,6 +83,9 @@ login_manager.login_view = "login"
 class User(UserMixin):
     def __init__(self, username, role="guest"):
         self.id = username
+        # Map legacy roles
+        if role == 'admin': role = 'superadmin'
+        if role == 'guest': role = 'participante'
         self.role = role
 
     @property
