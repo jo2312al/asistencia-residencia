@@ -25,77 +25,31 @@ class DatabaseManager:
             username VARCHAR(50) PRIMARY KEY,
             password_hash VARCHAR(255) NOT NULL,
             role VARCHAR(20) NOT NULL DEFAULT 'guest')''')
-
         c.execute('''CREATE TABLE IF NOT EXISTS projects (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(100) UNIQUE NOT NULL,
-            description TEXT,
-            start_date DATE,
-            end_date DATE,
-            location VARCHAR(255),
-            logo_url VARCHAR(255),
-            status VARCHAR(20) DEFAULT 'activo',
-            sender_email VARCHAR(100),
-            email_template TEXT,
-            attendance_rules TEXT)''')
-
-        c.execute('''CREATE TABLE IF NOT EXISTS project_fields (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            project_id INT,
-            name VARCHAR(100) NOT NULL,
-            type VARCHAR(50) NOT NULL,
-            is_required BOOLEAN DEFAULT FALSE,
-            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE)''')
-
-        c.execute('''CREATE TABLE IF NOT EXISTS participants (
+            description TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS students (
             id VARCHAR(36) PRIMARY KEY,
-            full_name VARCHAR(255) NOT NULL,
-            email VARCHAR(100),
-            phone VARCHAR(20),
+            first_name VARCHAR(50) NOT NULL,
+            last_name_p VARCHAR(50) NOT NULL,
+            last_name_m VARCHAR(50) NOT NULL,
+            matricula VARCHAR(20) UNIQUE NOT NULL,
+            carrera VARCHAR(100) NOT NULL,
             project_id INT,
-            status VARCHAR(50) DEFAULT 'registrado',
-            token VARCHAR(100) UNIQUE,
-            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE)''')
-
-        c.execute('''CREATE TABLE IF NOT EXISTS participant_field_values (
+            FOREIGN KEY (project_id) REFERENCES projects(id))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS attendance (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            participant_id VARCHAR(36),
-            field_id INT,
-            value TEXT,
-            FOREIGN KEY (participant_id) REFERENCES participants(id) ON DELETE CASCADE,
-            FOREIGN KEY (field_id) REFERENCES project_fields(id) ON DELETE CASCADE)''')
-
-        c.execute('''CREATE TABLE IF NOT EXISTS credentials (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            participant_id VARCHAR(36),
-            token VARCHAR(100) UNIQUE NOT NULL,
-            qr_file VARCHAR(255),
-            status VARCHAR(50) DEFAULT 'generada',
-            FOREIGN KEY (participant_id) REFERENCES participants(id) ON DELETE CASCADE)''')
-
-        c.execute('''CREATE TABLE IF NOT EXISTS attendance_events (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            participant_id VARCHAR(36),
-            project_id INT,
-            event_type VARCHAR(50) NOT NULL,
+            student_id VARCHAR(36),
             timestamp DATETIME,
-            FOREIGN KEY (participant_id) REFERENCES participants(id) ON DELETE CASCADE,
-            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE)''')
-
-        c.execute('''CREATE TABLE IF NOT EXISTS email_logs (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            participant_id VARCHAR(36),
-            status VARCHAR(50),
-            timestamp DATETIME,
-            FOREIGN KEY (participant_id) REFERENCES participants(id) ON DELETE CASCADE)''')
-
-        c.execute('''
+            FOREIGN KEY (student_id) REFERENCES students(id))''')
+        c.execute("""
             SELECT COUNT(*)
             FROM information_schema.COLUMNS
             WHERE TABLE_SCHEMA = %s
             AND TABLE_NAME = 'users'
             AND COLUMN_NAME = 'role'
-        ''', (self.db_config['database'],))
+        """, (self.db_config['database'],))
         has_role_column = c.fetchone()[0] > 0
         if not has_role_column:
             c.execute("ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'guest'")
@@ -190,90 +144,6 @@ class DatabaseManager:
         student = c.fetchone()
         conn.close()
         return student
-
-    def add_project(self, name, description=None, start_date=None, end_date=None, location=None, logo_url=None, status='activo', sender_email=None, email_template=None, attendance_rules=None):
-        conn = mysql.connector.connect(**self.db_config)
-        c = conn.cursor()
-        c.execute('''INSERT INTO projects (name, description, start_date, end_date, location, logo_url, status, sender_email, email_template, attendance_rules)
-                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
-                  (name, description, start_date, end_date, location, logo_url, status, sender_email, email_template, attendance_rules))
-        conn.commit()
-        project_id = c.lastrowid
-        conn.close()
-        return project_id
-
-    def get_project(self, project_id):
-        conn = mysql.connector.connect(**self.db_config)
-        c = conn.cursor(dictionary=True)
-        c.execute("SELECT * FROM projects WHERE id = %s", (project_id,))
-        project = c.fetchone()
-        conn.close()
-        return project
-
-    def add_project_field(self, project_id, name, type, is_required=False):
-        conn = mysql.connector.connect(**self.db_config)
-        c = conn.cursor()
-        c.execute('''INSERT INTO project_fields (project_id, name, type, is_required)
-                     VALUES (%s, %s, %s, %s)''',
-                  (project_id, name, type, is_required))
-        conn.commit()
-        field_id = c.lastrowid
-        conn.close()
-        return field_id
-
-    def get_project_fields(self, project_id):
-        conn = mysql.connector.connect(**self.db_config)
-        c = conn.cursor(dictionary=True)
-        c.execute("SELECT * FROM project_fields WHERE project_id = %s", (project_id,))
-        fields = c.fetchall()
-        conn.close()
-        return fields
-
-    def add_participant(self, participant_id, full_name, email, phone, project_id, token, status='registrado'):
-        conn = mysql.connector.connect(**self.db_config)
-        c = conn.cursor()
-        c.execute('''INSERT INTO participants (id, full_name, email, phone, project_id, status, token)
-                     VALUES (%s, %s, %s, %s, %s, %s, %s)''',
-                  (participant_id, full_name, email, phone, project_id, status, token))
-        conn.commit()
-        conn.close()
-
-    def get_participant_by_token(self, token):
-        conn = mysql.connector.connect(**self.db_config)
-        c = conn.cursor(dictionary=True)
-        c.execute("SELECT * FROM participants WHERE token = %s", (token,))
-        participant = c.fetchone()
-        conn.close()
-        return participant
-
-    def add_participant_field_value(self, participant_id, field_id, value):
-        conn = mysql.connector.connect(**self.db_config)
-        c = conn.cursor()
-        c.execute('''INSERT INTO participant_field_values (participant_id, field_id, value)
-                     VALUES (%s, %s, %s)''',
-                  (participant_id, field_id, value))
-        conn.commit()
-        conn.close()
-
-    def add_credential(self, participant_id, token, qr_file, status='generada'):
-        conn = mysql.connector.connect(**self.db_config)
-        c = conn.cursor()
-        c.execute('''INSERT INTO credentials (participant_id, token, qr_file, status)
-                     VALUES (%s, %s, %s, %s)''',
-                  (participant_id, token, qr_file, status))
-        conn.commit()
-        conn.close()
-
-    def log_email(self, participant_id, status):
-        conn = mysql.connector.connect(**self.db_config)
-        c = conn.cursor()
-        from datetime import datetime
-        now = datetime.now()
-        c.execute('''INSERT INTO email_logs (participant_id, status, timestamp)
-                     VALUES (%s, %s, %s)''',
-                  (participant_id, status, now))
-        conn.commit()
-        conn.close()
 
     def upload_students_from_excel(self, file, project_id):
         df = pd.read_excel(file)
