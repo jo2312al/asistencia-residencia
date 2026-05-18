@@ -42,7 +42,10 @@
                 <i class="bi bi-download"></i> Descargar Todos los Códigos QR (ZIP)
             </a>
             <a href="{{ url_for('download_all_qrs_pdf') }}" class="btn btn-primary">
-                <i class="bi bi-file-earmark-pdf"></i> Descargar Todos los Códigos QR (PDF)
+                <i class="bi bi-file-earmark-pdf"></i> Credenciales (PDF)
+            </a>
+            <a href="{{ url_for('download_all_credentials_rect_pdf') }}" class="btn btn-outline-primary ms-2">
+                <i class="bi bi-file-earmark-pdf"></i> Credenciales Rectangulares
             </a>
         </div>
 
@@ -57,7 +60,6 @@
                         <th scope="col">Apellido M</th>
                         <th scope="col">Carrera</th>
                         <th scope="col">Proyecto</th>
-                        <th scope="col">Folio</th>
                         <th scope="col">Código QR</th>
                     </tr>
                 </thead>
@@ -71,7 +73,6 @@
                             <td>{{ student['last_name_m'] }}</td>
                             <td>{{ student['carrera'] }}</td>
                             <td>{{ student['project_name'] or 'Sin proyecto' }}</td>
-                            <td>{{ student['credential_token'] }}</td>
                             <td>
                                 {% if student['qr_path'] %}
                                     <a href="{{ student['qr_path'] }}" download="{{ student['credential_token'] }}.png">
@@ -86,7 +87,7 @@
                         {% endfor %}
                     {% else %}
                         <tr>
-                            <td colspan="8" class="text-center">No se encontraron participantes.</td>
+                            <td colspan="7" class="text-center">No se encontraron participantes.</td>
                         </tr>
                     {% endif %}
                 </tbody>

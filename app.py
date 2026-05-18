@@ -131,10 +131,6 @@ def build_credential_card(student, styles, cell_width, cell_height):
     else:
         logo_cell = Paragraph("<b>Innovatec</b>", name_style)
 
-    token_text = student["credential_token"]
-    if student.get("is_legacy_qr"):
-        token_text = f"{token_text} / Matricula"
-
     qr_image = Image(student["qr_path"], width=1.65 * inch, height=1.65 * inch)
     qr_image.hAlign = "CENTER"
 
@@ -144,7 +140,6 @@ def build_credential_card(student, styles, cell_width, cell_height):
         [Paragraph(student["name"], name_style)],
         [Paragraph(student["project_name"], text_style)],
         [Paragraph(f"Matricula: {student['matricula']}", text_style)],
-        [Paragraph(f"Folio: {token_text}", text_style)],
         [Spacer(1, 0.12 * inch)],
         [qr_image],
         [Paragraph("Presenta este codigo para registrar asistencia", label_style)],
@@ -175,6 +170,103 @@ def build_credential_card(student, styles, cell_width, cell_height):
         )
     )
     return wrapper
+
+
+def build_rectangular_credential_card(student, styles, card_width, card_height):
+    logo_path = os.path.join(BASE_DIR, "static", "img", "logo.webp")
+    text_style = ParagraphStyle(
+        "RectCredentialText",
+        parent=styles["Normal"],
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#212529"),
+    )
+    name_style = ParagraphStyle(
+        "RectCredentialName",
+        parent=styles["Heading4"],
+        fontSize=13,
+        leading=15,
+        textColor=colors.HexColor("#003087"),
+    )
+    label_style = ParagraphStyle(
+        "RectCredentialLabel",
+        parent=styles["Normal"],
+        fontSize=7,
+        leading=9,
+        textColor=colors.HexColor("#6c757d"),
+    )
+
+    if os.path.exists(logo_path):
+        logo_cell = Image(logo_path, width=0.75 * inch, height=0.75 * inch)
+    else:
+        logo_cell = Paragraph("<b>Innovatec</b>", name_style)
+
+    qr_image = Image(student["qr_path"], width=1.25 * inch, height=1.25 * inch)
+    info = Table(
+        [
+            [Paragraph("CREDENCIAL DE ACCESO", label_style)],
+            [Paragraph(student["name"], name_style)],
+            [Paragraph(student["project_name"], text_style)],
+            [Paragraph(f"Matricula: {student['matricula']}", text_style)],
+            [Paragraph("Presenta este codigo para registrar asistencia", label_style)],
+        ],
+        colWidths=[card_width - 2.35 * inch],
+    )
+    info.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+
+    card = Table(
+        [[logo_cell, info, qr_image]],
+        colWidths=[0.95 * inch, card_width - 2.2 * inch, 1.25 * inch],
+        rowHeights=[card_height],
+    )
+    card.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f3f7fb")),
+                ("BOX", (0, 0), (-1, -1), 1.2, colors.HexColor("#003087")),
+                ("LINEAFTER", (0, 0), (0, -1), 0.8, colors.HexColor("#d9e6f2")),
+                ("ALIGN", (0, 0), (0, -1), "CENTER"),
+                ("ALIGN", (2, 0), (2, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    return card
+
+
+def get_credential_students(qr_tool=None):
+    students = db_manager.get_all_students()
+    local_qr_manager = qr_tool or QRManager()
+    projects = {project[0]: project[1] for project in db_manager.get_all_projects()}
+    student_data = []
+    for student in students:
+        matricula = student[4]
+        qr_path, credential_token, is_legacy_qr = ensure_student_qr(student, local_qr_manager)
+        project_id = student[6]
+        project_name = projects.get(project_id, "Sin proyecto") if project_id else "Sin proyecto"
+        project_number = (project_id - 1) if project_id else None
+
+        if os.path.exists(qr_path):
+            student_data.append(
+                {
+                    "name": f"{student[1]} {student[2]} {student[3]}",
+                    "matricula": matricula,
+                    "credential_token": credential_token or "Legacy",
+                    "is_legacy_qr": is_legacy_qr,
+                    "qr_path": qr_path,
+                    "project_id": project_id,
+                    "project_name": project_name,
+                    "project_number": project_number,
+                }
+            )
+
+    student_data.sort(key=lambda x: (x["project_id"] is None, x["project_id"] or float("inf")))
+    return student_data
 
 default_admin_username = os.getenv("ADMIN_USERNAME")
 default_admin_password = os.getenv("ADMIN_PASSWORD")
@@ -506,7 +598,6 @@ def data():
 @login_required
 @role_required("admin", "staff")
 def download_all_qrs_pdf():
-    students = db_manager.get_all_students()
     local_qr_manager = QRManager()
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -526,32 +617,7 @@ def download_all_qrs_pdf():
     elements = []
     styles = getSampleStyleSheet()
 
-    projects = {project[0]: project[1] for project in db_manager.get_all_projects()}
-
-    student_data = []
-    for student in students:
-        matricula = student[4]
-        qr_path, credential_token, is_legacy_qr = ensure_student_qr(student, local_qr_manager)
-
-        project_id = student[6]
-        project_name = projects.get(project_id, "Sin proyecto") if project_id else "Sin proyecto"
-        project_number = (project_id - 1) if project_id else None
-
-        if os.path.exists(qr_path):
-            student_data.append(
-                {
-                    "name": f"{student[1]} {student[2]} {student[3]}",
-                    "matricula": matricula,
-                    "credential_token": credential_token or "Legacy",
-                    "is_legacy_qr": is_legacy_qr,
-                    "qr_path": qr_path,
-                    "project_id": project_id,
-                    "project_name": project_name,
-                    "project_number": project_number,
-                }
-            )
-
-    student_data.sort(key=lambda x: (x["project_id"] is None, x["project_id"] or float("inf")))
+    student_data = get_credential_students(local_qr_manager)
 
     page_width = letter[0]
     page_height = letter[1]
@@ -590,7 +656,45 @@ def download_all_qrs_pdf():
             elements.append(Spacer(1, 0.5 * inch))
 
     doc.build(elements)
-    return send_file(pdf_path, as_attachment=True, download_name="qr_codes.pdf")
+    return send_file(pdf_path, as_attachment=True, download_name="credenciales.pdf")
+
+
+@app.route("/download_all_credentials_rect_pdf")
+@login_required
+@role_required("admin", "staff")
+def download_all_credentials_rect_pdf():
+    local_qr_manager = QRManager()
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_dir = "static/reports"
+    if not os.path.exists(report_dir):
+        os.makedirs(report_dir)
+    pdf_path = os.path.join(report_dir, f"credentials_rect_{timestamp}.pdf").replace("\\", "/")
+
+    doc = SimpleDocTemplate(
+        pdf_path,
+        pagesize=letter,
+        leftMargin=0.45 * inch,
+        rightMargin=0.45 * inch,
+        topMargin=0.45 * inch,
+        bottomMargin=0.45 * inch,
+    )
+    elements = []
+    styles = getSampleStyleSheet()
+    student_data = get_credential_students(local_qr_manager)
+
+    page_width = letter[0]
+    margin = 0.45 * inch
+    card_width = page_width - 2 * margin
+    card_height = 1.65 * inch
+
+    for index, student in enumerate(student_data):
+        elements.append(build_rectangular_credential_card(student, styles, card_width, card_height))
+        if index + 1 < len(student_data):
+            elements.append(Spacer(1, 0.16 * inch))
+
+    doc.build(elements)
+    return send_file(pdf_path, as_attachment=True, download_name="credenciales_rectangulares.pdf")
 
 
 @app.route("/download_all_qrs")
