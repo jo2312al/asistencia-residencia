@@ -766,6 +766,30 @@ class DatabaseManager:
         conn.close()
         return field_id
 
+    def delete_event_field(self, field_id):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute("DELETE FROM participant_event_field_values WHERE field_id = %s", (field_id,))
+        c.execute("DELETE FROM event_fields WHERE id = %s", (field_id,))
+        conn.commit()
+        deleted = c.rowcount
+        conn.close()
+        return deleted > 0
+
+    def update_event_rules(self, event_id, duplicate_policy, status=None):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """UPDATE events
+               SET duplicate_policy = %s, status = COALESCE(%s, status)
+               WHERE id = %s""",
+            (duplicate_policy or 'once_per_day', status or None, event_id)
+        )
+        conn.commit()
+        updated = c.rowcount
+        conn.close()
+        return updated > 0
+
     def save_participant_event_field_values(self, participant_id, field_values):
         if not participant_id or not field_values:
             return

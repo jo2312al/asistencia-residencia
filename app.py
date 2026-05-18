@@ -649,28 +649,97 @@ def register():
 @login_required
 @role_required("admin")
 def settings():
-    projects = db_manager.get_all_projects()
-    selected_project_id = request.args.get("project_id", type=int)
-    selected_project = None
-    project_fields = []
+    events = db_manager.get_all_events()
+    selected_event_id = request.args.get("event_id", type=int)
+    selected_event = None
+    event_fields = []
 
-    if selected_project_id:
-        for project in projects:
-            if project[0] == selected_project_id:
-                selected_project = project
-                break
-        if selected_project:
-            project_fields = db_manager.get_project_fields(selected_project_id)
+    if selected_event_id:
+        selected_event = db_manager.get_event(selected_event_id)
+        if selected_event:
+            event_fields = db_manager.get_event_fields(selected_event_id)
         else:
-            flash("Proyecto no encontrado", "warning")
+            flash("Evento no encontrado", "warning")
+
+    mail_config = get_mail_config()
+    mail_status = {
+        "server": mail_config.get("server") or "",
+        "port": mail_config.get("port"),
+        "username": mail_config.get("username") or "",
+        "sender": mail_config.get("sender") or "",
+        "use_tls": mail_config.get("use_tls"),
+        "use_ssl": mail_config.get("use_ssl"),
+        "is_ready": not [key for key in ("server", "username", "password", "sender") if not mail_config.get(key)],
+    }
 
     return render_template(
         "settings.html",
-        projects=projects,
-        selected_project=selected_project,
-        selected_project_id=selected_project_id,
-        project_fields=project_fields,
+        events=events,
+        selected_event=selected_event,
+        selected_event_id=selected_event_id,
+        event_fields=event_fields,
+        mail_status=mail_status,
+        system_info={
+            "app_name": "AsisTec",
+            "database": db_config.get("database"),
+            "environment": os.getenv("FLASK_ENV") or os.getenv("ENVIRONMENT") or "production",
+        },
     )
+
+
+@app.route("/settings/event-fields", methods=["POST"])
+@login_required
+@role_required("admin")
+def create_event_field():
+    event_id = request.form.get("event_id", type=int)
+    name = (request.form.get("name") or "").strip()
+    field_type = request.form.get("field_type") or "text"
+    is_required = request.form.get("is_required") == "on"
+    display_order = request.form.get("display_order", 0, type=int)
+
+    if not event_id or not name:
+        flash("Evento y nombre del campo son requeridos", "danger")
+        return redirect(url_for("settings", event_id=event_id or ""))
+
+    try:
+        db_manager.add_event_field(event_id, name, field_type, is_required, display_order)
+        flash("Campo agregado correctamente", "success")
+    except Exception as e:
+        flash(str(e), "danger")
+    return redirect(url_for("settings", event_id=event_id))
+
+
+@app.route("/settings/event-fields/<int:field_id>/delete", methods=["POST"])
+@login_required
+@role_required("admin")
+def delete_event_field(field_id):
+    event_id = request.form.get("event_id", type=int)
+    try:
+        deleted = db_manager.delete_event_field(field_id)
+        flash("Campo eliminado" if deleted else "Campo no encontrado", "success" if deleted else "warning")
+    except Exception as e:
+        flash(str(e), "danger")
+    return redirect(url_for("settings", event_id=event_id or ""))
+
+
+@app.route("/settings/event-rules", methods=["POST"])
+@login_required
+@role_required("admin")
+def update_event_rules():
+    event_id = request.form.get("event_id", type=int)
+    duplicate_policy = request.form.get("duplicate_policy") or "once_per_day"
+    status = request.form.get("status") or None
+
+    if not event_id:
+        flash("Selecciona un evento para actualizar reglas", "danger")
+        return redirect(url_for("settings"))
+
+    try:
+        updated = db_manager.update_event_rules(event_id, duplicate_policy, status)
+        flash("Reglas actualizadas" if updated else "Evento no encontrado", "success" if updated else "warning")
+    except Exception as e:
+        flash(str(e), "danger")
+    return redirect(url_for("settings", event_id=event_id))
 
 
 @app.route("/settings/project-fields", methods=["POST"])
@@ -678,34 +747,16 @@ def settings():
 @role_required("admin")
 def create_project_field():
     project_id = request.form.get("project_id", type=int)
-    name = (request.form.get("name") or "").strip()
-    field_type = request.form.get("field_type") or "text"
-    is_required = request.form.get("is_required") == "on"
-    display_order = request.form.get("display_order", 0, type=int)
-
-    if not project_id or not name:
-        flash("Proyecto y nombre del campo son requeridos", "danger")
-        return redirect(url_for("settings", project_id=project_id or ""))
-
-    try:
-        db_manager.add_project_field(project_id, name, field_type, is_required, display_order)
-        flash("Campo agregado correctamente", "success")
-    except Exception as e:
-        flash(str(e), "danger")
-    return redirect(url_for("settings", project_id=project_id))
+    flash("Los campos ahora se administran por evento.", "warning")
+    return redirect(url_for("settings"))
 
 
 @app.route("/settings/project-fields/<int:field_id>/delete", methods=["POST"])
 @login_required
 @role_required("admin")
 def delete_project_field(field_id):
-    project_id = request.form.get("project_id", type=int)
-    try:
-        deleted = db_manager.delete_project_field(field_id)
-        flash("Campo eliminado" if deleted else "Campo no encontrado", "success" if deleted else "warning")
-    except Exception as e:
-        flash(str(e), "danger")
-    return redirect(url_for("settings", project_id=project_id or ""))
+    flash("Los campos ahora se administran por evento.", "warning")
+    return redirect(url_for("settings"))
 
 
 @app.route("/project_fields/<int:project_id>")
