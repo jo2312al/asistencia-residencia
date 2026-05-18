@@ -55,15 +55,15 @@
             <a href="{{ url_for('download_all_qrs_pdf', event_id=event_id_filter) }}" class="btn btn-primary">
                 <i class="bi bi-file-earmark-pdf"></i> Credenciales (PDF)
             </a>
-            <a href="{{ url_for('download_all_credentials_rect_pdf', event_id=event_id_filter) }}" class="btn btn-outline-primary ms-2">
-                <i class="bi bi-file-earmark-pdf"></i> Credenciales Rectangulares
-            </a>
             <form method="POST" action="{{ url_for('send_event_credentials') }}" class="d-inline">
                 <input type="hidden" name="event_id" value="{{ event_id_filter }}">
                 <button type="submit" class="btn btn-outline-success ms-2" {% if not event_id_filter %}disabled{% endif %}>
                     Enviar credenciales
                 </button>
             </form>
+            <a href="{{ url_for('download_all_credentials_rect_pdf', event_id=event_id_filter) }}" class="btn btn-outline-primary ms-2">
+                <i class="bi bi-file-earmark-pdf"></i> Credenciales Rectangulares
+            </a>
         </div>
 
         <!-- Tabla de estudiantes con contenedor responsivo -->

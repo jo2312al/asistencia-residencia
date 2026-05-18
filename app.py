@@ -124,6 +124,43 @@ def send_mail(recipient, subject, body, attachments=None):
         smtp.send_message(message)
 
 
+def send_registered_credential_silently(event_id, project_id, participant_type, recipient_email, credential, qr_path, full_name, matricula):
+    if not event_id:
+        return
+
+    try:
+        event = db_manager.get_event(event_id)
+        if not event:
+            return
+
+        recipient = recipient_email
+        if project_id and (participant_type or "").lower() != "asesor":
+            for row in db_manager.get_event_credential_rows(event_id):
+                if row.get("project_id") == int(project_id) and (row.get("participant_type") or "").lower() == "asesor" and row.get("email"):
+                    recipient = row["email"]
+                    break
+
+        if not recipient:
+            return
+
+        subject = f"Credencial para {event[1]}"
+        body = (
+            f"Hola,\n\nSe registro la credencial de {full_name} para {event[1]}.\n\n"
+            f"Matricula: {matricula}\n\n"
+            "Adjuntamos el QR para presentarlo en el registro de asistencia.\n"
+        )
+        filename = f"{matricula or credential['token']}.png"
+        send_mail(recipient, subject, body, [(qr_path, filename)])
+        db_manager.update_credentials_sent_status([credential["id"]], "sent")
+        db_manager.log_email(event_id, recipient, subject, "sent")
+    except Exception as exc:
+        try:
+            db_manager.update_credentials_sent_status([credential["id"]], "error")
+            db_manager.log_email(event_id, recipient_email or "sin destinatario", "Credencial", "error", str(exc))
+        except Exception:
+            pass
+
+
 qr_manager = QRManager()
 attendance_manager = AttendanceManager(db_manager)
 
@@ -1095,6 +1132,17 @@ def generate_qr():
         participant_id = db_manager.get_participant_id_by_student_id(student[0])
         db_manager.save_participant_event_field_values(participant_id, dynamic_values)
         qr_path = ensure_credential_qr(credential)
+        full_name = f"{first_name} {last_name_p} {last_name_m}".strip()
+        send_registered_credential_silently(
+            event_id,
+            project_id,
+            participant_type,
+            email_value,
+            credential,
+            qr_path,
+            full_name,
+            matricula,
+        )
         return jsonify({"success": True, "qr_path": qr_path, "credential_token": credential["token"]})
     except KeyError as e:
         return jsonify({"success": False, "error": f"Falta el campo {str(e)}"}), 400
