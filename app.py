@@ -595,6 +595,19 @@ def delete_project_field(field_id):
     return redirect(url_for("settings", project_id=project_id or ""))
 
 
+@app.route("/project_fields/<int:project_id>")
+@login_required
+@role_required("admin", api=True)
+def project_fields_api(project_id):
+    if not db_manager.get_project(project_id):
+        return jsonify({"success": False, "error": "Proyecto no encontrado"}), 404
+
+    return jsonify({
+        "success": True,
+        "fields": db_manager.get_project_fields_as_dicts(project_id),
+    })
+
+
 @app.route("/scan")
 @login_required
 @role_required("admin", "staff")
@@ -846,9 +859,23 @@ def generate_qr():
                 return jsonify({"success": False, "error": f"Proyecto con ID {project_id} no existe"}), 400
             conn.close()
 
+        dynamic_values = {}
+        if project_id:
+            for field in db_manager.get_project_fields(project_id):
+                field_id = field[0]
+                field_name = field[2]
+                is_required = bool(field[4])
+                value = (data.get(f"field_{field_id}") or "").strip()
+                if is_required and not value:
+                    return jsonify({"success": False, "error": f"Falta el campo {field_name}"}), 400
+                if value:
+                    dynamic_values[field_id] = value
+
         db_manager.add_student(student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id)
         student = db_manager.get_student_by_matricula(matricula)
         credential = db_manager.ensure_student_participant_credential(student)
+        participant_id = db_manager.get_participant_id_by_student_id(student[0])
+        db_manager.save_participant_field_values(participant_id, dynamic_values)
         qr_path = ensure_credential_qr(credential)
         return jsonify({"success": True, "qr_path": qr_path, "credential_token": credential["token"]})
     except KeyError as e:

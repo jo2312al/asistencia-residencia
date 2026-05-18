@@ -77,6 +77,15 @@ class DatabaseManager:
             updated_at DATETIME NOT NULL,
             FOREIGN KEY (project_id) REFERENCES projects(id),
             FOREIGN KEY (legacy_student_id) REFERENCES students(id))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS participant_field_values (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            participant_id VARCHAR(36) NOT NULL,
+            field_id INT NOT NULL,
+            value TEXT,
+            created_at DATETIME NULL,
+            updated_at DATETIME NULL,
+            FOREIGN KEY (participant_id) REFERENCES participants(id),
+            FOREIGN KEY (field_id) REFERENCES project_fields(id))''')
         c.execute('''CREATE TABLE IF NOT EXISTS credentials (
             id VARCHAR(36) PRIMARY KEY,
             participant_id VARCHAR(36) NOT NULL,
@@ -122,6 +131,8 @@ class DatabaseManager:
         self._ensure_column(c, 'project_fields', 'field_type', "VARCHAR(50) NOT NULL DEFAULT 'text'")
         self._ensure_column(c, 'project_fields', 'display_order', 'INT NOT NULL DEFAULT 0')
         self._ensure_column(c, 'project_fields', 'created_at', 'DATETIME NULL')
+        self._ensure_column(c, 'participant_field_values', 'created_at', 'DATETIME NULL')
+        self._ensure_column(c, 'participant_field_values', 'updated_at', 'DATETIME NULL')
         self._ensure_column(c, 'participants', 'created_at', 'DATETIME NULL')
         self._ensure_column(c, 'participants', 'updated_at', 'DATETIME NULL')
         self._ensure_column(c, 'credentials', 'qr_path', 'VARCHAR(255)')
@@ -308,6 +319,45 @@ class DatabaseManager:
         conn.close()
         return credential
 
+    def get_participant_id_by_student_id(self, student_id):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute("SELECT id FROM participants WHERE legacy_student_id = %s", (student_id,))
+        row = c.fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    def save_participant_field_values(self, participant_id, field_values):
+        if not participant_id or not field_values:
+            return
+
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        now = datetime.now()
+        for field_id, value in field_values.items():
+            c.execute(
+                """SELECT id FROM participant_field_values
+                   WHERE participant_id = %s AND field_id = %s""",
+                (participant_id, field_id)
+            )
+            existing = c.fetchone()
+            if existing:
+                c.execute(
+                    """UPDATE participant_field_values
+                       SET value = %s, updated_at = %s
+                       WHERE id = %s""",
+                    (value, now, existing[0])
+                )
+            else:
+                c.execute(
+                    """INSERT INTO participant_field_values
+                       (participant_id, field_id, value, created_at, updated_at)
+                       VALUES (%s, %s, %s, %s, %s)""",
+                    (participant_id, field_id, value, now, now)
+                )
+        conn.commit()
+        conn.close()
+
     def update_credential_qr_path(self, token, qr_path):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
@@ -357,6 +407,20 @@ class DatabaseManager:
         projects = c.fetchall()
         conn.close()
         return projects
+
+    def get_project(self, project_id):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """SELECT p.id, p.name, p.description, e.name
+               FROM projects p
+               LEFT JOIN events e ON p.event_id = e.id
+               WHERE p.id = %s""",
+            (project_id,)
+        )
+        project = c.fetchone()
+        conn.close()
+        return project
 
     def add_project(self, name, description=None, event_id=None):
         conn = mysql.connector.connect(**self.db_config)
@@ -437,6 +501,19 @@ class DatabaseManager:
         fields = c.fetchall()
         conn.close()
         return fields
+
+    def get_project_fields_as_dicts(self, project_id):
+        return [
+            {
+                "id": field[0],
+                "project_id": field[1],
+                "name": field[2],
+                "field_type": field[3],
+                "is_required": bool(field[4]),
+                "display_order": field[5],
+            }
+            for field in self.get_project_fields(project_id)
+        ]
 
     def add_project_field(self, project_id, name, field_type='text', is_required=False, display_order=0):
         conn = mysql.connector.connect(**self.db_config)

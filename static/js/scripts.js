@@ -102,6 +102,74 @@ function registerAttendance(qrData) {
     });
 }
 
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function normalizeFieldType(fieldType) {
+    const allowedTypes = ['text', 'email', 'number', 'date', 'tel'];
+    return allowedTypes.includes(fieldType) ? fieldType : 'text';
+}
+
+async function loadProjectFields(projectId) {
+    const container = document.getElementById('project-fields-container');
+    if (!container) return;
+
+    container.innerHTML = '';
+    container.classList.add('d-none');
+    if (!projectId) return;
+
+    try {
+        const response = await fetch(`/project_fields/${projectId}`);
+        const result = await response.json();
+        if (!result.success || !result.fields.length) return;
+
+        const title = document.createElement('h3');
+        title.className = 'h6 mb-3';
+        title.textContent = 'Campos adicionales del proyecto';
+        container.appendChild(title);
+
+        result.fields.forEach((field) => {
+            const group = document.createElement('div');
+            group.className = 'mb-3';
+
+            const label = document.createElement('label');
+            label.className = 'form-label';
+            label.setAttribute('for', `field_${field.id}`);
+            label.innerHTML = `${escapeHtml(field.name)}${field.is_required ? ' <span class="text-danger">*</span>' : ''}`;
+
+            const input = document.createElement('input');
+            input.className = 'form-control';
+            input.type = normalizeFieldType(field.field_type);
+            input.id = `field_${field.id}`;
+            input.name = `field_${field.id}`;
+            input.required = Boolean(field.is_required);
+
+            group.appendChild(label);
+            group.appendChild(input);
+            container.appendChild(group);
+        });
+        container.classList.remove('d-none');
+    } catch (error) {
+        console.error("Error cargando campos del proyecto:", error);
+    }
+}
+
+function initializeProjectFieldsLoader() {
+    const projectSelect = document.getElementById('project_id');
+    if (!projectSelect) return;
+
+    projectSelect.addEventListener('change', function() {
+        loadProjectFields(this.value);
+    });
+    loadProjectFields(projectSelect.value);
+}
+
 // Formulario de registro (para /register)
 function initializeGenerateQRForm() {
     console.log("Inicializando formulario de generación de QR");
@@ -120,8 +188,7 @@ function initializeGenerateQRForm() {
                 console.log("Respuesta de /generate_qr:", result);
                 const resultContainer = document.getElementById('qr-result');
                 if (result.success) {
-                    const tokenText = result.credential_token ? ` Folio: ${result.credential_token}.` : '';
-                    resultContainer.innerHTML = `<p class="text-success">QR generado.${tokenText} <a href="${result.qr_path}" download>Descargar QR</a></p>`;
+                    resultContainer.innerHTML = `<p class="text-success">QR generado. <a href="${result.qr_path}" download>Descargar QR</a></p>`;
                 } else {
                     resultContainer.innerHTML = `<p class="text-danger">Error: ${result.error}</p>`;
                 }
@@ -199,6 +266,7 @@ document.addEventListener('DOMContentLoaded', function() {
         initializeQRScanner();
     }
     if (document.getElementById('register-form')) {
+        initializeProjectFieldsLoader();
         initializeGenerateQRForm();
     }
     if (document.getElementById('excel-form')) {

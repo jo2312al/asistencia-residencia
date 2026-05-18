@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
-{% block title %}Registrar Alumnos{% endblock %}
+{% block title %}Registrar Participantes{% endblock %}
 {% block content %}
-<h1 class="text-center tecn-blue-text mb-4">Registrar Alumnos - Innovatec TecNM</h1>
+<h1 class="text-center tecn-blue-text mb-4">Registrar Participantes - Innovatec TecNM</h1>
 <div class="card shadow mb-4">
     <div class="card-header tecn-blue text-white">
         <h2 class="h5 mb-0">Registro Manual</h2>
@@ -21,7 +21,7 @@
                 <input type="text" class="form-control" id="last_name_m" name="last_name_m" required>
             </div>
             <div class="mb-3">
-                <label for="matricula" class="form-label">Matrícula</label>
+                <label for="matricula" class="form-label">Matricula</label>
                 <input type="text" class="form-control" id="matricula" name="matricula" required>
             </div>
             <div class="mb-3">
@@ -37,6 +37,7 @@
                     {% endfor %}
                 </select>
             </div>
+            <div id="project-fields-container" class="border-top pt-3 d-none"></div>
             <button type="submit" class="btn tecn-blue text-white">Generar QR</button>
         </form>
         <div id="qr-result" class="mt-3"></div>
@@ -44,7 +45,7 @@
 </div>
 <div class="card shadow">
     <div class="card-header tecn-blue text-white">
-        <h2 class="h5 mb-0">Cargar Estudiantes desde Excel</h2>
+        <h2 class="h5 mb-0">Cargar Participantes desde Excel</h2>
     </div>
     <div class="card-body">
         <form id="excel-form" method="POST" enctype="multipart/form-data" action="/upload_excel">
@@ -66,56 +67,4 @@
         <div id="excel-result" class="mt-3"></div>
     </div>
 </div>
-<script>
-    document.getElementById('register-form').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        console.log("Formulario manual enviado");  // Depuración
-        const formData = new FormData(this);
-        try {
-            const response = await fetch('/generate_qr', {
-                method: 'POST',
-                body: formData
-            });
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const result = await response.json();
-            console.log("Respuesta de /generate_qr:", result);  // Depuración
-            const resultContainer = document.getElementById('qr-result');
-            if (result.success) {
-                resultContainer.innerHTML = `<a href="${result.qr_path}" download>Descargar QR</a>`;
-            } else {
-                resultContainer.innerHTML = `<p class="text-danger">${result.error}</p>`;
-            }
-        } catch (error) {
-            console.error("Error en fetch /generate_qr:", error);
-            document.getElementById('qr-result').innerHTML = `<p class="text-danger">Error: ${error.message}</p>`;
-        }
-    });
-
-    document.getElementById('excel-form').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        console.log("Formulario Excel enviado");  // Depuración
-        const formData = new FormData(this);
-        try {
-            const response = await fetch('/upload_excel', {
-                method: 'POST',
-                body: formData
-            });
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const result = await response.json();
-            console.log("Respuesta de /upload_excel:", result);  // Depuración
-            const resultContainer = document.getElementById('excel-result');
-            if (result.success) {
-                resultContainer.innerHTML = `<p class="text-success">${result.message}</p>`;
-                if (result.qr_paths) {
-                    resultContainer.innerHTML += result.qr_paths.map(path => `<a href="${path}" download>Descargar QR</a>`).join('<br>');
-                }
-            } else {
-                resultContainer.innerHTML = `<p class="text-danger">${result.error}</p>`;
-            }
-        } catch (error) {
-            console.error("Error en fetch /upload_excel:", error);
-            document.getElementById('excel-result').innerHTML = `<p class="text-danger">Error: ${error.message}</p>`;
-        }
-    });
-</script>
 {% endblock %}
