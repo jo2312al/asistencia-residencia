@@ -44,7 +44,10 @@ class AttendanceManager:
         return "Asistencia registrada exitosamente"
 
     def register_attendance_by_qr_data(self, qr_data):
-        credential = self.db_manager.get_credential_by_token(qr_data)
+        try:
+            credential = self.db_manager.get_credential_by_token(qr_data)
+        except Exception:
+            credential = None
         if not credential:
             return self.register_attendance_by_matricula(qr_data)
 

@@ -184,10 +184,13 @@ class DatabaseManager:
         c.execute('''INSERT INTO students (id, first_name, last_name_p, last_name_m, matricula, carrera, project_id)
                      VALUES (%s, %s, %s, %s, %s, %s, %s)''',
                   (student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id))
-        participant_id = self._ensure_participant_for_student(
-            c, student_id, first_name, last_name_p, last_name_m, project_id
-        )
-        self._ensure_credential_for_participant(c, participant_id)
+        try:
+            participant_id = self._ensure_participant_for_student(
+                c, student_id, first_name, last_name_p, last_name_m, project_id
+            )
+            self._ensure_credential_for_participant(c, participant_id)
+        except Exception:
+            pass
         conn.commit()
         conn.close()
 
@@ -368,15 +371,18 @@ class DatabaseManager:
                              VALUES (%s, %s, %s, %s, %s, %s, %s)''',
                           (student_id, str(row['first_name']), str(row['last_name_p']), str(row['last_name_m']),
                            matricula, str(row['carrera']), project_id))
-                participant_id = self._ensure_participant_for_student(
-                    c,
-                    student_id,
-                    str(row['first_name']),
-                    str(row['last_name_p']),
-                    str(row['last_name_m']),
-                    project_id
-                )
-                self._ensure_credential_for_participant(c, participant_id)
+                try:
+                    participant_id = self._ensure_participant_for_student(
+                        c,
+                        student_id,
+                        str(row['first_name']),
+                        str(row['last_name_p']),
+                        str(row['last_name_m']),
+                        project_id
+                    )
+                    self._ensure_credential_for_participant(c, participant_id)
+                except Exception:
+                    pass
                 conn.commit()
                 success_count += 1
             except mysql.connector.Error as e:
