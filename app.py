@@ -448,6 +448,81 @@ def update_user_role(username):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+def normalize_datetime_input(value):
+    if not value:
+        return None
+    return value.replace("T", " ")
+
+
+@app.route("/events")
+@login_required
+@role_required("admin")
+def events():
+    return render_template(
+        "events.html",
+        events=db_manager.get_all_events(),
+        projects=db_manager.get_all_projects(),
+    )
+
+
+@app.route("/events", methods=["POST"])
+@login_required
+@role_required("admin")
+def create_event():
+    name = (request.form.get("name") or "").strip()
+    description = (request.form.get("description") or "").strip() or None
+    start_datetime = normalize_datetime_input(request.form.get("start_datetime"))
+    end_datetime = normalize_datetime_input(request.form.get("end_datetime"))
+    location = (request.form.get("location") or "").strip() or None
+    status = request.form.get("status") or "active"
+    event_type = request.form.get("event_type") or "general"
+    duplicate_policy = request.form.get("duplicate_policy") or "once_per_day"
+
+    if not name:
+        flash("Nombre del evento requerido", "danger")
+        return redirect(url_for("events"))
+
+    try:
+        db_manager.add_event(
+            name,
+            description,
+            start_datetime,
+            end_datetime,
+            location,
+            status,
+            event_type,
+            duplicate_policy,
+        )
+        flash("Evento creado correctamente", "success")
+    except Exception as e:
+        flash(str(e), "danger")
+    return redirect(url_for("events"))
+
+
+@app.route("/projects", methods=["POST"])
+@login_required
+@role_required("admin")
+def create_project():
+    name = (request.form.get("name") or "").strip()
+    description = (request.form.get("description") or "").strip() or None
+
+    if not name:
+        flash("Nombre del proyecto requerido", "danger")
+        return redirect(url_for("events"))
+
+    try:
+        db_manager.add_project(name, description)
+        flash("Proyecto agregado correctamente", "success")
+    except mysql.connector.Error as e:
+        if e.errno == 1062:
+            flash("Ya existe un proyecto con ese nombre", "warning")
+        else:
+            flash("Error al crear proyecto", "danger")
+    except Exception as e:
+        flash(str(e), "danger")
+    return redirect(url_for("events"))
+
+
 @app.route("/register")
 @login_required
 @role_required("admin")

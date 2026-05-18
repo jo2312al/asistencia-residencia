@@ -30,6 +30,17 @@ class DatabaseManager:
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(100) UNIQUE NOT NULL,
             description TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS events (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(150) NOT NULL,
+            description TEXT,
+            start_datetime DATETIME NULL,
+            end_datetime DATETIME NULL,
+            location VARCHAR(255),
+            status VARCHAR(30) NOT NULL DEFAULT 'active',
+            event_type VARCHAR(50) NOT NULL DEFAULT 'general',
+            duplicate_policy VARCHAR(50) NOT NULL DEFAULT 'once_per_day',
+            created_at DATETIME NULL)''')
         c.execute('''CREATE TABLE IF NOT EXISTS students (
             id VARCHAR(36) PRIMARY KEY,
             first_name VARCHAR(50) NOT NULL,
@@ -95,6 +106,14 @@ class DatabaseManager:
         has_role_column = c.fetchone()[0] > 0
         if not has_role_column:
             c.execute("ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'guest'")
+        self._ensure_column(c, 'events', 'description', 'TEXT')
+        self._ensure_column(c, 'events', 'start_datetime', 'DATETIME NULL')
+        self._ensure_column(c, 'events', 'end_datetime', 'DATETIME NULL')
+        self._ensure_column(c, 'events', 'location', 'VARCHAR(255)')
+        self._ensure_column(c, 'events', 'status', "VARCHAR(30) NOT NULL DEFAULT 'active'")
+        self._ensure_column(c, 'events', 'event_type', "VARCHAR(50) NOT NULL DEFAULT 'general'")
+        self._ensure_column(c, 'events', 'duplicate_policy', "VARCHAR(50) NOT NULL DEFAULT 'once_per_day'")
+        self._ensure_column(c, 'events', 'created_at', 'DATETIME NULL')
         self._ensure_column(c, 'participants', 'legacy_student_id', 'VARCHAR(36)')
         self._ensure_column(c, 'project_fields', 'field_type', "VARCHAR(50) NOT NULL DEFAULT 'text'")
         self._ensure_column(c, 'project_fields', 'display_order', 'INT NOT NULL DEFAULT 0')
@@ -329,6 +348,56 @@ class DatabaseManager:
         projects = c.fetchall()
         conn.close()
         return projects
+
+    def add_project(self, name, description=None):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO projects (name, description) VALUES (%s, %s)",
+            (name, description)
+        )
+        conn.commit()
+        project_id = c.lastrowid
+        conn.close()
+        return project_id
+
+    def get_all_events(self):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """SELECT id, name, description, start_datetime, end_datetime, location,
+                      status, event_type, duplicate_policy
+               FROM events
+               ORDER BY COALESCE(start_datetime, created_at) DESC, id DESC"""
+        )
+        events = c.fetchall()
+        conn.close()
+        return events
+
+    def add_event(self, name, description=None, start_datetime=None, end_datetime=None,
+                  location=None, status='active', event_type='general', duplicate_policy='once_per_day'):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO events
+               (name, description, start_datetime, end_datetime, location, status, event_type, duplicate_policy, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                name,
+                description,
+                start_datetime or None,
+                end_datetime or None,
+                location,
+                status or 'active',
+                event_type or 'general',
+                duplicate_policy or 'once_per_day',
+                datetime.now(),
+            )
+        )
+        conn.commit()
+        event_id = c.lastrowid
+        conn.close()
+        return event_id
 
     def get_project_fields(self, project_id):
         conn = mysql.connector.connect(**self.db_config)
