@@ -1,5 +1,6 @@
 from io import BytesIO
 import os
+import unicodedata
 import uuid
 import zipfile
 from datetime import datetime
@@ -67,6 +68,15 @@ app.secret_key = os.getenv("SECRET_KEY", "dev-secret-change-me")
 
 db_config = get_db_config()
 db_manager = DatabaseManager(db_config)
+
+BASE_REGISTRATION_FIELD_NAMES = {"nombre", "apellido paterno", "apellido materno", "matricula", "carrera"}
+
+
+def normalize_field_name(value):
+    text = unicodedata.normalize("NFD", value or "")
+    return "".join(char for char in text if unicodedata.category(char) != "Mn").strip().lower()
+
+
 qr_manager = QRManager()
 attendance_manager = AttendanceManager(db_manager)
 
@@ -498,8 +508,6 @@ def create_event():
         field_options = {
             "email": ("Correo", "email", True),
             "telefono": ("Telefono", "tel", False),
-            "matricula": ("Matricula", "text", False),
-            "carrera": ("Carrera", "text", False),
             "equipo": ("Equipo", "text", False),
             "categoria": ("Categoria", "text", False),
             "institucion": ("Institucion", "text", False),
@@ -633,9 +641,14 @@ def event_fields_api(event_id):
     if not db_manager.get_event(event_id):
         return jsonify({"success": False, "error": "Evento no encontrado"}), 404
 
+    fields = [
+        field
+        for field in db_manager.get_event_fields_as_dicts(event_id)
+        if normalize_field_name(field["name"]) not in BASE_REGISTRATION_FIELD_NAMES
+    ]
     return jsonify({
         "success": True,
-        "fields": db_manager.get_event_fields_as_dicts(event_id),
+        "fields": fields,
     })
 
 
@@ -927,6 +940,8 @@ def generate_qr():
             for field in db_manager.get_event_fields(event_id):
                 field_id = field[0]
                 field_name = field[2]
+                if normalize_field_name(field_name) in BASE_REGISTRATION_FIELD_NAMES:
+                    continue
                 is_required = bool(field[4])
                 value = (data.get(f"field_{field_id}") or "").strip()
                 if is_required and not value:

@@ -4,6 +4,7 @@ import pandas as pd
 import uuid
 import os
 import secrets
+import unicodedata
 from datetime import datetime
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
@@ -14,6 +15,7 @@ from werkzeug.security import generate_password_hash
 
 class DatabaseManager:
     VALID_ROLES = {'admin', 'staff', 'guest'}
+    BASE_REGISTRATION_FIELD_NAMES = {'nombre', 'apellido paterno', 'apellido materno', 'matricula', 'carrera'}
 
     def __init__(self, db_config):
         self.db_config = db_config
@@ -229,6 +231,10 @@ class DatabaseManager:
         users = c.fetchall()
         conn.close()
         return users
+
+    def _normalize_field_name(self, value):
+        text = unicodedata.normalize("NFD", value or "")
+        return "".join(char for char in text if unicodedata.category(char) != "Mn").strip().lower()
 
     def update_user_role(self, username, role):
         role_value = self.normalize_role(role)
@@ -770,7 +776,11 @@ class DatabaseManager:
             project_fields = self.get_project_fields(project_id)
 
         required_dynamic_columns = [field[2] for field in project_fields if field[4]]
-        required_dynamic_columns += [field[2] for field in event_fields if field[4]]
+        required_dynamic_columns += [
+            field[2]
+            for field in event_fields
+            if field[4] and self._normalize_field_name(field[2]) not in self.BASE_REGISTRATION_FIELD_NAMES
+        ]
         missing_dynamic_columns = [name for name in required_dynamic_columns if name not in df.columns]
         if missing_dynamic_columns:
             conn.close()
@@ -799,6 +809,8 @@ class DatabaseManager:
                 for field in event_fields:
                     field_id = field[0]
                     field_name = field[2]
+                    if self._normalize_field_name(field_name) in self.BASE_REGISTRATION_FIELD_NAMES:
+                        continue
                     is_required = bool(field[4])
                     raw_value = row[field_name] if field_name in df.columns else ""
                     value = "" if pd.isna(raw_value) else str(raw_value).strip()

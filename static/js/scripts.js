@@ -116,6 +116,14 @@ function normalizeFieldType(fieldType) {
     return allowedTypes.includes(fieldType) ? fieldType : 'text';
 }
 
+function normalizeFieldName(name) {
+    return String(name || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+}
+
 async function loadEventFields(eventId) {
     const container = document.getElementById('event-fields-container');
     if (!container) return;
@@ -128,15 +136,22 @@ async function loadEventFields(eventId) {
         const response = await fetch(`/event_fields/${eventId}`);
         const result = await response.json();
         if (!result.success || !result.fields.length) return;
+        const baseFieldNames = new Set(['nombre', 'apellido paterno', 'apellido materno', 'matricula', 'carrera']);
+        const fields = result.fields.filter((field) => !baseFieldNames.has(normalizeFieldName(field.name)));
+        if (!fields.length) return;
 
         const title = document.createElement('h3');
         title.className = 'h6 mb-3';
         title.textContent = 'Campos adicionales del evento';
         container.appendChild(title);
 
-        result.fields.forEach((field) => {
+        const grid = document.createElement('div');
+        grid.className = 'row g-3';
+        container.appendChild(grid);
+
+        fields.forEach((field) => {
             const group = document.createElement('div');
-            group.className = 'mb-3';
+            group.className = 'col-md-6';
 
             const label = document.createElement('label');
             label.className = 'form-label';
@@ -152,7 +167,7 @@ async function loadEventFields(eventId) {
 
             group.appendChild(label);
             group.appendChild(input);
-            container.appendChild(group);
+            grid.appendChild(group);
         });
         container.classList.remove('d-none');
     } catch (error) {
@@ -240,7 +255,18 @@ function initializeGenerateQRForm() {
                 console.log("Respuesta de /generate_qr:", result);
                 const resultContainer = document.getElementById('qr-result');
                 if (result.success) {
-                    resultContainer.innerHTML = `<p class="text-success">QR generado. <a href="${result.qr_path}" download>Descargar QR</a></p>`;
+                    resultContainer.innerHTML = '';
+                    const downloadContainer = document.getElementById('register-success-download');
+                    if (downloadContainer) {
+                        downloadContainer.innerHTML = `<a href="${result.qr_path}" download>Descargar QR</a>`;
+                    }
+                    const successModalElement = document.getElementById('registerSuccessModal');
+                    if (successModalElement && window.bootstrap) {
+                        const successModal = new bootstrap.Modal(successModalElement);
+                        successModal.show();
+                    } else {
+                        resultContainer.innerHTML = `<p class="text-success">Usuario registrado. <a href="${result.qr_path}" download>Descargar QR</a></p>`;
+                    }
                 } else {
                     resultContainer.innerHTML = `<p class="text-danger">Error: ${result.error}</p>`;
                 }
@@ -250,6 +276,32 @@ function initializeGenerateQRForm() {
             }
         });
     }
+}
+
+function initializeRegisterSuccessModal() {
+    const button = document.getElementById('register-another-btn');
+    const form = document.getElementById('register-form');
+    const modalElement = document.getElementById('registerSuccessModal');
+    if (!button || !form || !modalElement) return;
+
+    button.addEventListener('click', function() {
+        const selectedEvent = document.getElementById('event_id')?.value || '';
+        const selectedProject = document.getElementById('project_id')?.value || '';
+        form.reset();
+        const eventSelect = document.getElementById('event_id');
+        if (eventSelect && selectedEvent) {
+            eventSelect.value = selectedEvent;
+            loadEventFields(selectedEvent);
+            loadEventProjects(selectedEvent, 'project_id').then(() => {
+                const projectSelect = document.getElementById('project_id');
+                if (projectSelect && selectedProject) projectSelect.value = selectedProject;
+            });
+        }
+        document.getElementById('qr-result').innerHTML = '';
+        const modal = bootstrap.Modal.getInstance(modalElement);
+        if (modal) modal.hide();
+        document.getElementById('first_name')?.focus();
+    });
 }
 
 // Formulario de carga de Excel (para /register)
@@ -320,6 +372,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (document.getElementById('register-form')) {
         initializeProjectFieldsLoader();
         initializeGenerateQRForm();
+        initializeRegisterSuccessModal();
     }
     if (document.getElementById('excel-form')) {
         initializeExcelUploadForm();

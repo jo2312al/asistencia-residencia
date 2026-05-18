@@ -2,82 +2,109 @@
 {% block title %}Registrar Participantes{% endblock %}
 {% block content %}
 <h1 class="text-center tecn-blue-text mb-4">Registrar Participantes - Innovatec TecNM</h1>
+
 <div class="card shadow mb-4">
     <div class="card-header tecn-blue text-white">
         <h2 class="h5 mb-0">Registro Manual</h2>
     </div>
     <div class="card-body">
         <form id="register-form" method="POST">
-            <div class="mb-3">
-                <label for="event_id" class="form-label">Evento</label>
-                <select class="form-select" id="event_id" name="event_id" required>
-                    <option value="">Seleccione un evento</option>
-                    {% for event in events %}
-                        <option value="{{ event[0] }}">{{ event[1] }}</option>
-                    {% endfor %}
-                </select>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label for="event_id" class="form-label">Evento</label>
+                    <select class="form-select" id="event_id" name="event_id" required>
+                        <option value="">Seleccione un evento</option>
+                        {% for event in events %}
+                            <option value="{{ event[0] }}">{{ event[1] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label for="project_id" class="form-label">Proyecto</label>
+                    <select class="form-select" id="project_id" name="project_id">
+                        <option value="">Seleccione primero un evento</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label for="first_name" class="form-label">Nombre</label>
+                    <input type="text" class="form-control" id="first_name" name="first_name" required>
+                </div>
+                <div class="col-md-6">
+                    <label for="last_name_p" class="form-label">Apellido Paterno</label>
+                    <input type="text" class="form-control" id="last_name_p" name="last_name_p" required>
+                </div>
+                <div class="col-md-6">
+                    <label for="last_name_m" class="form-label">Apellido Materno</label>
+                    <input type="text" class="form-control" id="last_name_m" name="last_name_m" required>
+                </div>
+                <div class="col-md-3">
+                    <label for="matricula" class="form-label">Matricula</label>
+                    <input type="text" class="form-control" id="matricula" name="matricula" required>
+                </div>
+                <div class="col-md-3">
+                    <label for="carrera" class="form-label">Carrera</label>
+                    <input type="text" class="form-control" id="carrera" name="carrera" required>
+                </div>
             </div>
-            <div class="mb-3">
-                <label for="first_name" class="form-label">Nombre</label>
-                <input type="text" class="form-control" id="first_name" name="first_name" required>
-            </div>
-            <div class="mb-3">
-                <label for="last_name_p" class="form-label">Apellido Paterno</label>
-                <input type="text" class="form-control" id="last_name_p" name="last_name_p" required>
-            </div>
-            <div class="mb-3">
-                <label for="last_name_m" class="form-label">Apellido Materno</label>
-                <input type="text" class="form-control" id="last_name_m" name="last_name_m" required>
-            </div>
-            <div class="mb-3">
-                <label for="matricula" class="form-label">Matricula</label>
-                <input type="text" class="form-control" id="matricula" name="matricula" required>
-            </div>
-            <div class="mb-3">
-                <label for="carrera" class="form-label">Carrera</label>
-                <input type="text" class="form-control" id="carrera" name="carrera" required>
-            </div>
-            <div class="mb-3">
-                <label for="project_id" class="form-label">Proyecto</label>
-                <select class="form-select" id="project_id" name="project_id">
-                    <option value="">Seleccione primero un evento</option>
-                </select>
-            </div>
-            <div id="event-fields-container" class="border-top pt-3 d-none"></div>
-            <button type="submit" class="btn tecn-blue text-white">Generar QR</button>
+            <div id="event-fields-container" class="border-top mt-3 pt-3 d-none"></div>
+            <button type="submit" class="btn tecn-blue text-white mt-3">Registrar usuario</button>
         </form>
         <div id="qr-result" class="mt-3"></div>
     </div>
 </div>
+
 <div class="card shadow">
     <div class="card-header tecn-blue text-white">
         <h2 class="h5 mb-0">Cargar Participantes desde Excel</h2>
     </div>
     <div class="card-body">
         <form id="excel-form" method="POST" enctype="multipart/form-data" action="/upload_excel">
-            <div class="mb-3">
-                <label for="excel_file" class="form-label">Seleccionar archivo Excel</label>
-                <input type="file" class="form-control" id="excel_file" name="excel_file" accept=".xlsx,.xls" required>
-                <div class="form-text">Columnas base: first_name, last_name_p, last_name_m, matricula, carrera. Si el evento tiene campos obligatorios, agregalos como columnas con el mismo nombre.</div>
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-5">
+                    <label for="excel_file" class="form-label">Seleccionar archivo Excel</label>
+                    <input type="file" class="form-control" id="excel_file" name="excel_file" accept=".xlsx,.xls" required>
+                    <div class="form-text">Columnas base: first_name, last_name_p, last_name_m, matricula, carrera.</div>
+                </div>
+                <div class="col-lg-3">
+                    <label for="event_id_excel" class="form-label">Evento</label>
+                    <select class="form-select" id="event_id_excel" name="event_id" required>
+                        <option value="">Seleccione un evento</option>
+                        {% for event in events %}
+                            <option value="{{ event[0] }}">{{ event[1] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-lg-3">
+                    <label for="project_id_excel" class="form-label">Proyecto</label>
+                    <select class="form-select" id="project_id_excel" name="project_id">
+                        <option value="">Seleccione primero un evento</option>
+                    </select>
+                </div>
+                <div class="col-lg-1">
+                    <button type="submit" class="btn tecn-blue text-white w-100">Cargar</button>
+                </div>
             </div>
-            <div class="mb-3">
-                <label for="event_id_excel" class="form-label">Evento</label>
-                <select class="form-select" id="event_id_excel" name="event_id" required>
-                    <option value="">Seleccione un evento</option>
-                    {% for event in events %}
-                        <option value="{{ event[0] }}">{{ event[1] }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="mb-3">
-                <label for="project_id_excel" class="form-label">Proyecto</label>
-                <select class="form-select" id="project_id_excel" name="project_id">
-                    <option value="">Seleccione primero un evento</option>
-                </select>
-            </div>
-            <button type="submit" class="btn tecn-blue text-white">Cargar Excel</button>
         </form>
         <div id="excel-result" class="mt-3"></div>
+    </div>
+</div>
+
+<div class="modal fade" id="registerSuccessModal" tabindex="-1" aria-labelledby="registerSuccessModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header tecn-blue text-white">
+                <h2 class="modal-title h5" id="registerSuccessModalLabel">Usuario registrado</h2>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">El usuario fue registrado y su credencial quedó generada.</p>
+                <div id="register-success-download"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-primary" id="register-another-btn">Registrar otro</button>
+                <a href="{{ url_for('admin_dashboard') }}" class="btn tecn-blue text-white">Pantalla principal</a>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
