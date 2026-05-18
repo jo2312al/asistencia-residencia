@@ -12,7 +12,7 @@ from flask import Flask, flash, jsonify, redirect, render_template, request, sen
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -98,6 +98,83 @@ def ensure_student_qr(student, qr_tool=None):
         if not os.path.exists(qr_path):
             qr_path = active_qr_manager.generate_qr(matricula)
         return qr_path, None, True
+
+
+def build_credential_card(student, styles, cell_width, cell_height):
+    logo_path = os.path.join(BASE_DIR, "static", "img", "logo.webp")
+    text_style = ParagraphStyle(
+        "CredentialText",
+        parent=styles["Normal"],
+        fontSize=8,
+        leading=10,
+        alignment=1,
+    )
+    name_style = ParagraphStyle(
+        "CredentialName",
+        parent=styles["Heading4"],
+        fontSize=11,
+        leading=13,
+        alignment=1,
+        textColor=colors.HexColor("#003087"),
+    )
+    label_style = ParagraphStyle(
+        "CredentialLabel",
+        parent=styles["Normal"],
+        fontSize=7,
+        leading=9,
+        alignment=1,
+        textColor=colors.HexColor("#6c757d"),
+    )
+
+    if os.path.exists(logo_path):
+        logo_cell = Image(logo_path, width=0.85 * inch, height=0.85 * inch)
+    else:
+        logo_cell = Paragraph("<b>Innovatec</b>", name_style)
+
+    token_text = student["credential_token"]
+    if student.get("is_legacy_qr"):
+        token_text = f"{token_text} / Matricula"
+
+    qr_image = Image(student["qr_path"], width=1.65 * inch, height=1.65 * inch)
+    qr_image.hAlign = "CENTER"
+
+    content = [
+        [logo_cell],
+        [Paragraph("CREDENCIAL DE ACCESO", label_style)],
+        [Paragraph(student["name"], name_style)],
+        [Paragraph(student["project_name"], text_style)],
+        [Paragraph(f"Matricula: {student['matricula']}", text_style)],
+        [Paragraph(f"Folio: {token_text}", text_style)],
+        [Spacer(1, 0.12 * inch)],
+        [qr_image],
+        [Paragraph("Presenta este codigo para registrar asistencia", label_style)],
+    ]
+    card = Table(content, colWidths=[cell_width - 0.25 * inch])
+    card.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 1), colors.HexColor("#f3f7fb")),
+                ("BOX", (0, 0), (-1, -1), 1.2, colors.HexColor("#003087")),
+                ("LINEBELOW", (0, 1), (-1, 1), 0.8, colors.HexColor("#d9e6f2")),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+    wrapper = Table([[card]], colWidths=[cell_width], rowHeights=[cell_height])
+    wrapper.setStyle(
+        TableStyle(
+            [
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    return wrapper
 
 default_admin_username = os.getenv("ADMIN_USERNAME")
 default_admin_password = os.getenv("ADMIN_PASSWORD")
@@ -429,44 +506,18 @@ def download_all_qrs_pdf():
         for j, student in enumerate(students_chunk):
             row = j // 2
             col = j % 2
-            cell_elements = []
-
-            name_paragraph = Paragraph(f"Nombre: {student['name']}", styles["Normal"])
-            matricula_paragraph = Paragraph(f"Matricula: {student['matricula']}", styles["Normal"])
-            token_paragraph = Paragraph(f"Folio: {student['credential_token']}", styles["Normal"])
-            cell_elements.append([name_paragraph])
-            cell_elements.append([matricula_paragraph])
-            cell_elements.append([token_paragraph])
-
-            project_name_paragraph = Paragraph(f"Proyecto: {student['project_name']}", styles["Normal"])
-            number_text = student["project_number"] if student["project_number"] is not None else "N/A"
-            project_number_paragraph = Paragraph(f"Numero Proyecto: {number_text}", styles["Normal"])
-            cell_elements.append([project_name_paragraph])
-            cell_elements.append([project_number_paragraph])
-            cell_elements.append([Spacer(1, 0.5 * inch)])
-
-            qr_image = Image(student["qr_path"], width=2 * inch, height=2 * inch)
-            qr_image.hAlign = "CENTER"
-            cell_elements.append([qr_image])
-
-            sub_table = Table(cell_elements, colWidths=[cell_width])
-            sub_table.setStyle(
-                TableStyle(
-                    [
-                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ]
-                )
-            )
-            grid_data[row][col] = sub_table
+            grid_data[row][col] = build_credential_card(student, styles, cell_width, cell_height)
 
         table = Table(grid_data, colWidths=[cell_width, cell_width], rowHeights=[cell_height, cell_height])
         table.setStyle(
             TableStyle(
                 [
-                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
                     ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
                 ]
             )
         )
