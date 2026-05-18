@@ -644,6 +644,7 @@ def data():
     start = (page - 1) * per_page
     end = start + per_page
     students_paginated = all_students[start:end]
+    custom_values_by_student = db_manager.get_field_values_by_student_ids([student[0] for student in students_paginated])
 
     students_with_qr = []
     for student in students_paginated:
@@ -669,6 +670,7 @@ def data():
             "credential_token": credential_token or "Legacy",
             "is_legacy_qr": is_legacy_qr,
             "qr_path": qr_path if os.path.exists(qr_path) else None,
+            "custom_fields": custom_values_by_student.get(student[0], []),
         }
         students_with_qr.append(student_dict)
 

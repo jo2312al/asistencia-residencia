@@ -333,30 +333,55 @@ class DatabaseManager:
 
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
+        self._save_participant_field_values(c, participant_id, field_values)
+        conn.commit()
+        conn.close()
+
+    def _save_participant_field_values(self, cursor, participant_id, field_values):
         now = datetime.now()
         for field_id, value in field_values.items():
-            c.execute(
+            cursor.execute(
                 """SELECT id FROM participant_field_values
                    WHERE participant_id = %s AND field_id = %s""",
                 (participant_id, field_id)
             )
-            existing = c.fetchone()
+            existing = cursor.fetchone()
             if existing:
-                c.execute(
+                cursor.execute(
                     """UPDATE participant_field_values
                        SET value = %s, updated_at = %s
                        WHERE id = %s""",
                     (value, now, existing[0])
                 )
             else:
-                c.execute(
+                cursor.execute(
                     """INSERT INTO participant_field_values
                        (participant_id, field_id, value, created_at, updated_at)
                        VALUES (%s, %s, %s, %s, %s)""",
                     (participant_id, field_id, value, now, now)
                 )
-        conn.commit()
+
+    def get_field_values_by_student_ids(self, student_ids):
+        if not student_ids:
+            return {}
+
+        placeholders = ",".join(["%s"] * len(student_ids))
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            f"""SELECT p.legacy_student_id, pf.name, pfv.value
+                FROM participant_field_values pfv
+                JOIN project_fields pf ON pfv.field_id = pf.id
+                JOIN participants p ON pfv.participant_id = p.id
+                WHERE p.legacy_student_id IN ({placeholders})
+                ORDER BY pf.display_order, pf.id""",
+            tuple(student_ids)
+        )
+        values = {}
+        for student_id, name, value in c.fetchall():
+            values.setdefault(student_id, []).append({"name": name, "value": value})
         conn.close()
+        return values
 
     def update_credential_qr_path(self, token, qr_path):
         conn = mysql.connector.connect(**self.db_config)
@@ -588,41 +613,64 @@ class DatabaseManager:
         c = conn.cursor()
         errors = []
         success_count = 0
+        project_fields = []
 
         if project_id:
             c.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
             if not c.fetchone():
                 conn.close()
                 raise ValueError("Proyecto no encontrado")
+            project_fields = self.get_project_fields(project_id)
+
+        required_dynamic_columns = [field[2] for field in project_fields if field[4]]
+        missing_dynamic_columns = [name for name in required_dynamic_columns if name not in df.columns]
+        if missing_dynamic_columns:
+            conn.close()
+            raise ValueError(
+                "El Excel debe contener las columnas configuradas como obligatorias: "
+                + ", ".join(missing_dynamic_columns)
+            )
 
         for index, row in df.iterrows():
             student_id = str(uuid.uuid4())
             matricula = str(row['matricula'])
             try:
+                dynamic_values = {}
+                for field in project_fields:
+                    field_id = field[0]
+                    field_name = field[2]
+                    is_required = bool(field[4])
+                    raw_value = row[field_name] if field_name in df.columns else ""
+                    value = "" if pd.isna(raw_value) else str(raw_value).strip()
+                    if is_required and not value:
+                        raise ValueError(f"Falta {field_name}")
+                    if value:
+                        dynamic_values[field_id] = value
+
                 c.execute('''INSERT INTO students (id, first_name, last_name_p, last_name_m, matricula, carrera, project_id)
                              VALUES (%s, %s, %s, %s, %s, %s, %s)''',
                           (student_id, str(row['first_name']), str(row['last_name_p']), str(row['last_name_m']),
                            matricula, str(row['carrera']), project_id))
-                try:
-                    participant_id = self._ensure_participant_for_student(
-                        c,
-                        student_id,
-                        str(row['first_name']),
-                        str(row['last_name_p']),
-                        str(row['last_name_m']),
-                        project_id
-                    )
-                    self._ensure_credential_for_participant(c, participant_id)
-                except Exception:
-                    pass
+                participant_id = self._ensure_participant_for_student(
+                    c,
+                    student_id,
+                    str(row['first_name']),
+                    str(row['last_name_p']),
+                    str(row['last_name_m']),
+                    project_id
+                )
+                self._ensure_credential_for_participant(c, participant_id)
+                self._save_participant_field_values(c, participant_id, dynamic_values)
                 conn.commit()
                 success_count += 1
             except mysql.connector.Error as e:
+                conn.rollback()
                 if e.errno == 1062:
                     errors.append(f"Matrícula {matricula} ya registrada")
                 else:
                     errors.append(f"Error en matrícula {matricula}: {str(e)}")
             except Exception as e:
+                conn.rollback()
                 errors.append(f"Error en matrícula {matricula}: {str(e)}")
 
         conn.close()

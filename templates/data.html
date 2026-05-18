@@ -60,6 +60,7 @@
                         <th scope="col">Apellido M</th>
                         <th scope="col">Carrera</th>
                         <th scope="col">Proyecto</th>
+                        <th scope="col">Datos adicionales</th>
                         <th scope="col">Código QR</th>
                     </tr>
                 </thead>
@@ -74,6 +75,17 @@
                             <td>{{ student['carrera'] }}</td>
                             <td>{{ student['project_name'] or 'Sin proyecto' }}</td>
                             <td>
+                                {% if student['custom_fields'] %}
+                                    <div class="small">
+                                        {% for field in student['custom_fields'] %}
+                                            <div><strong>{{ field['name'] }}:</strong> {{ field['value'] }}</div>
+                                        {% endfor %}
+                                    </div>
+                                {% else %}
+                                    <span class="text-muted">Sin datos</span>
+                                {% endif %}
+                            </td>
+                            <td>
                                 {% if student['qr_path'] %}
                                     <a href="{{ student['qr_path'] }}" download="{{ student['credential_token'] }}.png">
                                         <img src="{{ student['qr_path'] }}" alt="QR {{ student['credential_token'] }}" width="50" height="50">
@@ -87,7 +99,7 @@
                         {% endfor %}
                     {% else %}
                         <tr>
-                            <td colspan="7" class="text-center">No se encontraron participantes.</td>
+                            <td colspan="8" class="text-center">No se encontraron participantes.</td>
                         </tr>
                     {% endif %}
                 </tbody>
