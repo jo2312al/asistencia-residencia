@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% block title %}Configuracion{% endblock %}
+{% block content %}
+<h1 class="text-center tecn-blue-text mb-4">Configuracion</h1>
+
+<div class="card shadow mb-4">
+    <div class="card-header tecn-blue text-white">
+        <h2 class="h5 mb-0">Formulario por proyecto</h2>
+    </div>
+    <div class="card-body">
+        <form method="GET" action="{{ url_for('settings') }}" class="row g-3 align-items-end">
+            <div class="col-md-8">
+                <label for="project_id" class="form-label">Proyecto</label>
+                <select class="form-select" id="project_id" name="project_id" required>
+                    <option value="">Selecciona un proyecto</option>
+                    {% for project in projects %}
+                    <option value="{{ project[0] }}" {% if selected_project_id == project[0] %}selected{% endif %}>{{ project[1] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn tecn-blue text-white w-100">Ver campos</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if selected_project %}
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card shadow h-100">
+            <div class="card-header tecn-blue text-white">
+                <h2 class="h5 mb-0">Agregar campo</h2>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('create_project_field') }}">
+                    <input type="hidden" name="project_id" value="{{ selected_project[0] }}">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Nombre del campo</label>
+                        <input type="text" class="form-control" id="name" name="name" placeholder="Ej. Equipo, Categoria, RFC" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="field_type" class="form-label">Tipo</label>
+                        <select class="form-select" id="field_type" name="field_type">
+                            <option value="text">Texto</option>
+                            <option value="email">Correo</option>
+                            <option value="tel">Telefono</option>
+                            <option value="number">Numero</option>
+                            <option value="date">Fecha</option>
+                            <option value="textarea">Texto largo</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="display_order" class="form-label">Orden</label>
+                        <input type="number" class="form-control" id="display_order" name="display_order" value="0">
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="is_required" name="is_required">
+                        <label class="form-check-label" for="is_required">Obligatorio</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Agregar campo</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card shadow h-100">
+            <div class="card-header tecn-blue text-white">
+                <h2 class="h5 mb-0">Campos de {{ selected_project[1] }}</h2>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead>
+                            <tr>
+                                <th>Orden</th>
+                                <th>Campo</th>
+                                <th>Tipo</th>
+                                <th>Requerido</th>
+                                <th class="text-end">Accion</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for field in project_fields %}
+                            <tr>
+                                <td>{{ field[5] }}</td>
+                                <td>{{ field[2] }}</td>
+                                <td>{{ field[3] }}</td>
+                                <td>{{ 'Si' if field[4] else 'No' }}</td>
+                                <td class="text-end">
+                                    <form method="POST" action="{{ url_for('delete_project_field', field_id=field[0]) }}">
+                                        <input type="hidden" name="project_id" value="{{ selected_project[0] }}">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted">Este proyecto aun no tiene campos personalizados.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

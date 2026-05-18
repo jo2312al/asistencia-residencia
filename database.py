@@ -44,6 +44,15 @@ class DatabaseManager:
             student_id VARCHAR(36),
             timestamp DATETIME,
             FOREIGN KEY (student_id) REFERENCES students(id))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS project_fields (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            project_id INT NOT NULL,
+            name VARCHAR(100) NOT NULL,
+            field_type VARCHAR(50) NOT NULL DEFAULT 'text',
+            is_required BOOLEAN NOT NULL DEFAULT FALSE,
+            display_order INT NOT NULL DEFAULT 0,
+            created_at DATETIME NULL,
+            FOREIGN KEY (project_id) REFERENCES projects(id))''')
         c.execute('''CREATE TABLE IF NOT EXISTS participants (
             id VARCHAR(36) PRIMARY KEY,
             full_name VARCHAR(150) NOT NULL,
@@ -87,6 +96,9 @@ class DatabaseManager:
         if not has_role_column:
             c.execute("ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'guest'")
         self._ensure_column(c, 'participants', 'legacy_student_id', 'VARCHAR(36)')
+        self._ensure_column(c, 'project_fields', 'field_type', "VARCHAR(50) NOT NULL DEFAULT 'text'")
+        self._ensure_column(c, 'project_fields', 'display_order', 'INT NOT NULL DEFAULT 0')
+        self._ensure_column(c, 'project_fields', 'created_at', 'DATETIME NULL')
         self._ensure_column(c, 'participants', 'created_at', 'DATETIME NULL')
         self._ensure_column(c, 'participants', 'updated_at', 'DATETIME NULL')
         self._ensure_column(c, 'credentials', 'qr_path', 'VARCHAR(255)')
@@ -99,6 +111,11 @@ class DatabaseManager:
         conn.close()
 
     def _ensure_column(self, cursor, table_name, column_name, definition):
+        if self._column_exists(cursor, table_name, column_name):
+            return
+        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+
+    def _column_exists(self, cursor, table_name, column_name):
         cursor.execute("""
             SELECT COUNT(*)
             FROM information_schema.COLUMNS
@@ -106,8 +123,7 @@ class DatabaseManager:
             AND TABLE_NAME = %s
             AND COLUMN_NAME = %s
         """, (self.db_config['database'], table_name, column_name))
-        if cursor.fetchone()[0] == 0:
-            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+        return cursor.fetchone()[0] > 0
 
     def _get_column_data_type(self, cursor, table_name, column_name):
         cursor.execute("""
@@ -313,6 +329,54 @@ class DatabaseManager:
         projects = c.fetchall()
         conn.close()
         return projects
+
+    def get_project_fields(self, project_id):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        type_column = 'field_type'
+        if not self._column_exists(c, 'project_fields', 'field_type') and self._column_exists(c, 'project_fields', 'type'):
+            type_column = 'type'
+        c.execute(
+            f"""SELECT id, project_id, name, {type_column}, is_required, display_order
+               FROM project_fields
+               WHERE project_id = %s
+               ORDER BY display_order, id""",
+            (project_id,)
+        )
+        fields = c.fetchall()
+        conn.close()
+        return fields
+
+    def add_project_field(self, project_id, name, field_type='text', is_required=False, display_order=0):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+        if not c.fetchone():
+            conn.close()
+            raise ValueError("Proyecto no encontrado")
+
+        type_column = 'field_type'
+        if not self._column_exists(c, 'project_fields', 'field_type') and self._column_exists(c, 'project_fields', 'type'):
+            type_column = 'type'
+        c.execute(
+            f"""INSERT INTO project_fields
+                (project_id, name, {type_column}, is_required, display_order, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s)""",
+            (project_id, name, field_type, bool(is_required), display_order or 0, datetime.now())
+        )
+        conn.commit()
+        field_id = c.lastrowid
+        conn.close()
+        return field_id
+
+    def delete_project_field(self, field_id):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute("DELETE FROM project_fields WHERE id = %s", (field_id,))
+        conn.commit()
+        deleted = c.rowcount
+        conn.close()
+        return deleted > 0
 
     def get_total_students(self):
         conn = mysql.connector.connect(**self.db_config)

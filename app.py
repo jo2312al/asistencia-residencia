@@ -364,6 +364,69 @@ def register():
     return render_template("register.html", projects=projects)
 
 
+@app.route("/settings")
+@login_required
+@role_required("admin")
+def settings():
+    projects = db_manager.get_all_projects()
+    selected_project_id = request.args.get("project_id", type=int)
+    selected_project = None
+    project_fields = []
+
+    if selected_project_id:
+        for project in projects:
+            if project[0] == selected_project_id:
+                selected_project = project
+                break
+        if selected_project:
+            project_fields = db_manager.get_project_fields(selected_project_id)
+        else:
+            flash("Proyecto no encontrado", "warning")
+
+    return render_template(
+        "settings.html",
+        projects=projects,
+        selected_project=selected_project,
+        selected_project_id=selected_project_id,
+        project_fields=project_fields,
+    )
+
+
+@app.route("/settings/project-fields", methods=["POST"])
+@login_required
+@role_required("admin")
+def create_project_field():
+    project_id = request.form.get("project_id", type=int)
+    name = (request.form.get("name") or "").strip()
+    field_type = request.form.get("field_type") or "text"
+    is_required = request.form.get("is_required") == "on"
+    display_order = request.form.get("display_order", 0, type=int)
+
+    if not project_id or not name:
+        flash("Proyecto y nombre del campo son requeridos", "danger")
+        return redirect(url_for("settings", project_id=project_id or ""))
+
+    try:
+        db_manager.add_project_field(project_id, name, field_type, is_required, display_order)
+        flash("Campo agregado correctamente", "success")
+    except Exception as e:
+        flash(str(e), "danger")
+    return redirect(url_for("settings", project_id=project_id))
+
+
+@app.route("/settings/project-fields/<int:field_id>/delete", methods=["POST"])
+@login_required
+@role_required("admin")
+def delete_project_field(field_id):
+    project_id = request.form.get("project_id", type=int)
+    try:
+        deleted = db_manager.delete_project_field(field_id)
+        flash("Campo eliminado" if deleted else "Campo no encontrado", "success" if deleted else "warning")
+    except Exception as e:
+        flash(str(e), "danger")
+    return redirect(url_for("settings", project_id=project_id or ""))
+
+
 @app.route("/scan")
 @login_required
 @role_required("admin", "staff")
