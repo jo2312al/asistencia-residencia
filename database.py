@@ -604,6 +604,96 @@ class DatabaseManager:
 
         return report_path
 
+    def get_event_attendance_report(self, event_id, start_date=None, end_date=None, project_id=None):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        query = """
+            SELECT s.matricula, s.first_name, s.last_name_p, s.last_name_m, s.carrera,
+                   p.name, e.name, ae.event_type, ae.timestamp
+            FROM attendance_events ae
+            LEFT JOIN credentials cdr ON ae.credential_id = cdr.id
+            LEFT JOIN participants part ON ae.participant_id = part.id
+            LEFT JOIN students s ON part.legacy_student_id = s.id
+            LEFT JOIN projects p ON s.project_id = p.id
+            LEFT JOIN events e ON ae.event_id = e.id
+            WHERE ae.event_id = %s
+        """
+        params = [event_id]
+        if start_date:
+            query += " AND DATE(ae.timestamp) >= %s"
+            params.append(start_date)
+        if end_date:
+            query += " AND DATE(ae.timestamp) <= %s"
+            params.append(end_date)
+        if project_id:
+            query += " AND s.project_id = %s"
+            params.append(project_id)
+        query += " ORDER BY ae.timestamp DESC"
+        c.execute(query, params)
+        report_data = c.fetchall()
+        conn.close()
+        return report_data
+
+    def export_event_attendance_to_excel(self, event_id, project_id, start_date, end_date):
+        report_data = self.get_event_attendance_report(event_id, start_date, end_date, project_id)
+        if not report_data:
+            raise ValueError("No hay datos para el reporte")
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        report_dir = 'static/reports'
+        if not os.path.exists(report_dir):
+            os.makedirs(report_dir)
+        report_path = os.path.join(report_dir, f'event_report_{timestamp}.xlsx').replace('\\', '/')
+
+        workbook = xlsxwriter.Workbook(report_path)
+        worksheet = workbook.add_worksheet()
+        worksheet.write('A1', 'Reporte de Asistencias por Evento')
+        headers = ['Matricula', 'Nombre', 'Apellido P', 'Apellido M', 'Carrera', 'Proyecto', 'Evento', 'Tipo', 'Fecha/Hora']
+        for col, header in enumerate(headers):
+            worksheet.write(1, col, header)
+        for row_idx, row in enumerate(report_data, 2):
+            for col_idx, value in enumerate(row):
+                worksheet.write(row_idx, col_idx, value.strftime('%Y-%m-%d %H:%M:%S') if hasattr(value, 'strftime') else value)
+        workbook.close()
+        return report_path
+
+    def export_event_attendance_to_pdf(self, event_id, project_id, start_date, end_date):
+        report_data = self.get_event_attendance_report(event_id, start_date, end_date, project_id)
+        if not report_data:
+            raise ValueError("No hay datos para el reporte")
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        report_dir = 'static/reports'
+        if not os.path.exists(report_dir):
+            os.makedirs(report_dir)
+        report_path = os.path.join(report_dir, f'event_report_{timestamp}.pdf').replace('\\', '/')
+
+        doc = SimpleDocTemplate(report_path, pagesize=letter)
+        elements = []
+        styles = getSampleStyleSheet()
+        elements.append(Paragraph("Reporte de Asistencias por Evento", styles['Title']))
+
+        data = [['Matricula', 'Nombre', 'Apellido P', 'Apellido M', 'Carrera', 'Proyecto', 'Evento', 'Tipo', 'Fecha/Hora']]
+        for row in report_data:
+            data.append([
+                row[0], row[1], row[2], row[3], row[4], row[5] or 'Sin proyecto',
+                row[6] or 'Sin evento', row[7], row[8].strftime('%Y-%m-%d %H:%M:%S') if hasattr(row[8], 'strftime') else row[8]
+            ])
+
+        table = Table(data, repeatRows=1)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 7),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        elements.append(table)
+        doc.build(elements)
+        return report_path
+
     def export_attendance_to_pdf(self, project_id, start_date, end_date):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()

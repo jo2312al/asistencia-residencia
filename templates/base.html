@@ -25,18 +25,33 @@
                     {% if current_user.is_authenticated %}
                         {% if current_user.role == 'admin' %}
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_dashboard') }}">Dashboard</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('events') }}">Eventos</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('scan') }}">Escanear</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('data') }}">Datos</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('register') }}">Registrar</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('reports') }}">Reportes</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('create_user') }}">Usuarios</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('settings') }}">Configuracion</a></li>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">Operacion</a>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="{{ url_for('events') }}">Eventos</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('register') }}">Registrar participantes</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('data') }}">Participantes</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('scan') }}">Escanear</a></li>
+                            </ul>
+                        </li>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">Administracion</a>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="{{ url_for('reports') }}">Reportes</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('create_user') }}">Usuarios</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('settings') }}">Configuracion</a></li>
+                            </ul>
+                        </li>
                         {% elif current_user.role == 'staff' %}
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('staff_dashboard') }}">Dashboard</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('scan') }}">Escanear</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('data') }}">Datos</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('reports') }}">Reportes</a></li>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">Operacion</a>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="{{ url_for('scan') }}">Escanear</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('data') }}">Participantes</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('reports') }}">Reportes</a></li>
+                            </ul>
+                        </li>
                         {% else %}
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('guest_dashboard') }}">Dashboard</a></li>
                         {% endif %}

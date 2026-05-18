@@ -26,6 +26,15 @@
                 </select>
             </div>
             <div class="mb-3">
+                <label for="event_id" class="form-label">Evento</label>
+                <select class="form-select" id="event_id" name="event_id">
+                    <option value="">Todos / reporte general</option>
+                    {% for event in events %}
+                        <option value="{{ event[0] }}">{{ event[1] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
                 <label for="format" class="form-label">Formato</label>
                 <select class="form-select" id="format" name="format" required>
                     <option value="pdf">PDF</option>

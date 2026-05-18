@@ -210,13 +210,13 @@ def build_rectangular_credential_card(student, styles, card_width, card_height):
             [Paragraph(f"Matricula: {student['matricula']}", text_style)],
             [Paragraph("Presenta este codigo para registrar asistencia", label_style)],
         ],
-        colWidths=[card_width - 2.35 * inch],
+        colWidths=[card_width - 1.85 * inch],
     )
     info.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
 
     card = Table(
         [[logo_cell, info, qr_image]],
-        colWidths=[0.95 * inch, card_width - 2.2 * inch, 1.25 * inch],
+        colWidths=[0.65 * inch, card_width - 1.85 * inch, 1.2 * inch],
         rowHeights=[card_height],
     )
     card.setStyle(
@@ -607,7 +607,8 @@ def scan():
 @role_required("admin", "staff")
 def reports():
     projects = db_manager.get_all_projects()
-    return render_template("reports.html", projects=projects)
+    events = db_manager.get_all_events()
+    return render_template("reports.html", projects=projects, events=events)
 
 
 @app.route("/data")
@@ -760,14 +761,37 @@ def download_all_credentials_rect_pdf():
     student_data = get_credential_students(local_qr_manager)
 
     page_width = letter[0]
+    page_height = letter[1]
     margin = 0.45 * inch
-    card_width = page_width - 2 * margin
-    card_height = 1.65 * inch
+    usable_width = page_width - 2 * margin
+    usable_height = page_height - 2 * margin
+    card_width = usable_width / 2
+    card_height = 1.55 * inch
 
-    for index, student in enumerate(student_data):
-        elements.append(build_rectangular_credential_card(student, styles, card_width, card_height))
-        if index + 1 < len(student_data):
-            elements.append(Spacer(1, 0.16 * inch))
+    for i in range(0, len(student_data), 10):
+        chunk = student_data[i:i + 10]
+        rows = []
+        for j in range(0, len(chunk), 2):
+            left = build_rectangular_credential_card(chunk[j], styles, card_width - 0.08 * inch, card_height)
+            right = build_rectangular_credential_card(chunk[j + 1], styles, card_width - 0.08 * inch, card_height) if j + 1 < len(chunk) else ""
+            rows.append([left, right])
+
+        table = Table(rows, colWidths=[card_width, card_width], rowHeights=[usable_height / 5] * len(rows))
+        table.setStyle(
+            TableStyle(
+                [
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ]
+            )
+        )
+        elements.append(table)
+        if i + 10 < len(student_data):
+            elements.append(Spacer(1, 0.2 * inch))
 
     doc.build(elements)
     return send_file(pdf_path, as_attachment=True, download_name="credenciales_rectangulares.pdf")
@@ -937,7 +961,17 @@ def generate_report():
         start_date = data.get("start_date") or None
         end_date = data.get("end_date") or None
         project_id = data.get("project_id") or None
+        event_id = data.get("event_id") or None
         format_type = data.get("format")
+
+        if event_id:
+            if format_type == "pdf":
+                report_path = db_manager.export_event_attendance_to_pdf(event_id, project_id, start_date, end_date)
+            elif format_type == "excel":
+                report_path = db_manager.export_event_attendance_to_excel(event_id, project_id, start_date, end_date)
+            else:
+                return jsonify({"success": False, "error": "Formato no soportado"}), 400
+            return jsonify({"success": True, "report_path": report_path})
 
         report_data = attendance_manager.get_attendance_report(start_date, end_date, project_id)
         if not report_data:
