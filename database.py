@@ -3,6 +3,7 @@ from mysql.connector import Error
 import pandas as pd
 import uuid
 import os
+import secrets
 from datetime import datetime
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
@@ -43,6 +44,38 @@ class DatabaseManager:
             student_id VARCHAR(36),
             timestamp DATETIME,
             FOREIGN KEY (student_id) REFERENCES students(id))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS participants (
+            id VARCHAR(36) PRIMARY KEY,
+            full_name VARCHAR(150) NOT NULL,
+            email VARCHAR(255),
+            phone VARCHAR(50),
+            project_id INT,
+            status VARCHAR(30) NOT NULL DEFAULT 'active',
+            legacy_student_id VARCHAR(36) UNIQUE,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES projects(id),
+            FOREIGN KEY (legacy_student_id) REFERENCES students(id))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS credentials (
+            id VARCHAR(36) PRIMARY KEY,
+            participant_id VARCHAR(36) NOT NULL,
+            token VARCHAR(80) UNIQUE NOT NULL,
+            status VARCHAR(30) NOT NULL DEFAULT 'active',
+            qr_path VARCHAR(255),
+            sent_status VARCHAR(30) NOT NULL DEFAULT 'pending',
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            FOREIGN KEY (participant_id) REFERENCES participants(id))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS attendance_events (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            participant_id VARCHAR(36),
+            credential_id VARCHAR(36),
+            legacy_attendance_id INT,
+            event_type VARCHAR(50) NOT NULL DEFAULT 'entrada',
+            timestamp DATETIME NOT NULL,
+            FOREIGN KEY (participant_id) REFERENCES participants(id),
+            FOREIGN KEY (credential_id) REFERENCES credentials(id),
+            FOREIGN KEY (legacy_attendance_id) REFERENCES attendance(id))''')
         c.execute("""
             SELECT COUNT(*)
             FROM information_schema.COLUMNS
@@ -120,6 +153,112 @@ class DatabaseManager:
         c.execute('''INSERT INTO students (id, first_name, last_name_p, last_name_m, matricula, carrera, project_id)
                      VALUES (%s, %s, %s, %s, %s, %s, %s)''',
                   (student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id))
+        participant_id = self._ensure_participant_for_student(
+            c, student_id, first_name, last_name_p, last_name_m, project_id
+        )
+        self._ensure_credential_for_participant(c, participant_id)
+        conn.commit()
+        conn.close()
+
+    def _new_credential_token(self):
+        return f"CRD-{secrets.token_hex(4)}"
+
+    def _ensure_participant_for_student(self, cursor, student_id, first_name, last_name_p, last_name_m, project_id):
+        cursor.execute("SELECT id FROM participants WHERE legacy_student_id = %s", (student_id,))
+        existing = cursor.fetchone()
+        full_name = f"{first_name} {last_name_p} {last_name_m}".strip()
+        now = datetime.now()
+        if existing:
+            participant_id = existing[0]
+            cursor.execute(
+                """UPDATE participants
+                   SET full_name = %s, project_id = %s, updated_at = %s
+                   WHERE id = %s""",
+                (full_name, project_id, now, participant_id)
+            )
+            return participant_id
+
+        participant_id = str(uuid.uuid4())
+        cursor.execute(
+            """INSERT INTO participants
+               (id, full_name, project_id, status, legacy_student_id, created_at, updated_at)
+               VALUES (%s, %s, %s, 'active', %s, %s, %s)""",
+            (participant_id, full_name, project_id, student_id, now, now)
+        )
+        return participant_id
+
+    def _ensure_credential_for_participant(self, cursor, participant_id):
+        cursor.execute(
+            "SELECT id, token, qr_path FROM credentials WHERE participant_id = %s ORDER BY created_at DESC LIMIT 1",
+            (participant_id,)
+        )
+        existing = cursor.fetchone()
+        if existing:
+            return {"id": existing[0], "token": existing[1], "qr_path": existing[2]}
+
+        credential_id = str(uuid.uuid4())
+        now = datetime.now()
+        for _ in range(5):
+            token = self._new_credential_token()
+            try:
+                cursor.execute(
+                    """INSERT INTO credentials
+                       (id, participant_id, token, status, sent_status, created_at, updated_at)
+                       VALUES (%s, %s, %s, 'active', 'pending', %s, %s)""",
+                    (credential_id, participant_id, token, now, now)
+                )
+                return {"id": credential_id, "token": token, "qr_path": None}
+            except mysql.connector.Error as e:
+                if e.errno != 1062:
+                    raise
+        raise ValueError("No se pudo generar un token unico para la credencial")
+
+    def ensure_student_participant_credential(self, student):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        participant_id = self._ensure_participant_for_student(
+            c, student[0], student[1], student[2], student[3], student[6]
+        )
+        credential = self._ensure_credential_for_participant(c, participant_id)
+        conn.commit()
+        conn.close()
+        return credential
+
+    def update_credential_qr_path(self, token, qr_path):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            "UPDATE credentials SET qr_path = %s, updated_at = %s WHERE token = %s",
+            (qr_path, datetime.now(), token)
+        )
+        conn.commit()
+        conn.close()
+
+    def get_credential_by_token(self, token):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor(dictionary=True)
+        c.execute(
+            """SELECT c.id AS credential_id, c.token, c.status AS credential_status,
+                      p.id AS participant_id, p.full_name, p.project_id, p.status AS participant_status,
+                      p.legacy_student_id
+               FROM credentials c
+               JOIN participants p ON c.participant_id = p.id
+               WHERE c.token = %s""",
+            (token,)
+        )
+        credential = c.fetchone()
+        conn.close()
+        return credential
+
+    def record_attendance_event(self, participant_id, credential_id, legacy_attendance_id, event_type, timestamp):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO attendance_events
+               (participant_id, credential_id, legacy_attendance_id, event_type, timestamp)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (participant_id, credential_id, legacy_attendance_id, event_type or 'entrada', timestamp)
+        )
         conn.commit()
         conn.close()
 
@@ -188,6 +327,15 @@ class DatabaseManager:
                              VALUES (%s, %s, %s, %s, %s, %s, %s)''',
                           (student_id, str(row['first_name']), str(row['last_name_p']), str(row['last_name_m']),
                            matricula, str(row['carrera']), project_id))
+                participant_id = self._ensure_participant_for_student(
+                    c,
+                    student_id,
+                    str(row['first_name']),
+                    str(row['last_name_p']),
+                    str(row['last_name_m']),
+                    project_id
+                )
+                self._ensure_credential_for_participant(c, participant_id)
                 conn.commit()
                 success_count += 1
             except mysql.connector.Error as e:

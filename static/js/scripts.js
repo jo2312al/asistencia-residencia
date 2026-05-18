@@ -118,7 +118,8 @@ function initializeGenerateQRForm() {
                 console.log("Respuesta de /generate_qr:", result);
                 const resultContainer = document.getElementById('qr-result');
                 if (result.success) {
-                    resultContainer.innerHTML = `<p class="text-success">QR generado: <a href="${result.qr_path}" download>Descargar QR</a></p>`;
+                    const tokenText = result.credential_token ? ` Folio: ${result.credential_token}.` : '';
+                    resultContainer.innerHTML = `<p class="text-success">QR generado.${tokenText} <a href="${result.qr_path}" download>Descargar QR</a></p>`;
                 } else {
                     resultContainer.innerHTML = `<p class="text-danger">Error: ${result.error}</p>`;
                 }

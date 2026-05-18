@@ -70,6 +70,16 @@ db_manager = DatabaseManager(db_config)
 qr_manager = QRManager()
 attendance_manager = AttendanceManager(db_manager)
 
+
+def ensure_credential_qr(credential):
+    token = credential["token"]
+    qr_path = credential.get("qr_path") or os.path.join("static/qr_codes", f"{token}.png").replace("\\", "/")
+    if not os.path.exists(qr_path):
+        qr_path = qr_manager.generate_qr_data(token, token)
+    if credential.get("qr_path") != qr_path:
+        db_manager.update_credential_qr_path(token, qr_path)
+    return qr_path
+
 default_admin_username = os.getenv("ADMIN_USERNAME")
 default_admin_password = os.getenv("ADMIN_PASSWORD")
 if default_admin_username and default_admin_password:
@@ -297,10 +307,8 @@ def data():
     students_with_qr = []
     for student in students_paginated:
         matricula = student[4]
-        qr_path = os.path.join("static/qr_codes", f"{matricula}.png").replace("\\", "/")
-
-        if not os.path.exists(qr_path):
-            qr_manager.generate_qr(matricula)
+        credential = db_manager.ensure_student_participant_credential(student)
+        qr_path = ensure_credential_qr(credential)
 
         project_name = None
         if student[6]:
@@ -318,6 +326,7 @@ def data():
             "carrera": student[5],
             "project_id": student[6],
             "project_name": project_name,
+            "credential_token": credential["token"],
             "qr_path": qr_path if os.path.exists(qr_path) else None,
         }
         students_with_qr.append(student_dict)
@@ -363,10 +372,13 @@ def download_all_qrs_pdf():
     student_data = []
     for student in students:
         matricula = student[4]
-        qr_path = os.path.join("static/qr_codes", f"{matricula}.png").replace("\\", "/")
+        credential = db_manager.ensure_student_participant_credential(student)
+        qr_path = credential.get("qr_path") or os.path.join("static/qr_codes", f"{credential['token']}.png").replace("\\", "/")
 
         if not os.path.exists(qr_path):
-            local_qr_manager.generate_qr(matricula)
+            qr_path = local_qr_manager.generate_qr_data(credential["token"], credential["token"])
+        if credential.get("qr_path") != qr_path:
+            db_manager.update_credential_qr_path(credential["token"], qr_path)
 
         project_id = student[6]
         project_name = projects.get(project_id, "Sin proyecto") if project_id else "Sin proyecto"
@@ -377,6 +389,7 @@ def download_all_qrs_pdf():
                 {
                     "name": f"{student[1]} {student[2]} {student[3]}",
                     "matricula": matricula,
+                    "credential_token": credential["token"],
                     "qr_path": qr_path,
                     "project_id": project_id,
                     "project_name": project_name,
@@ -406,8 +419,10 @@ def download_all_qrs_pdf():
 
             name_paragraph = Paragraph(f"Nombre: {student['name']}", styles["Normal"])
             matricula_paragraph = Paragraph(f"Matricula: {student['matricula']}", styles["Normal"])
+            token_paragraph = Paragraph(f"Folio: {student['credential_token']}", styles["Normal"])
             cell_elements.append([name_paragraph])
             cell_elements.append([matricula_paragraph])
+            cell_elements.append([token_paragraph])
 
             project_name_paragraph = Paragraph(f"Proyecto: {student['project_name']}", styles["Normal"])
             number_text = student["project_number"] if student["project_number"] is not None else "N/A"
@@ -461,13 +476,16 @@ def download_all_qrs():
     with zipfile.ZipFile(memory_file, "w", zipfile.ZIP_DEFLATED) as zf:
         for student in students:
             matricula = student[4]
-            qr_path = os.path.join("static/qr_codes", f"{matricula}.png").replace("\\", "/")
+            credential = db_manager.ensure_student_participant_credential(student)
+            qr_path = credential.get("qr_path") or os.path.join("static/qr_codes", f"{credential['token']}.png").replace("\\", "/")
 
             if not os.path.exists(qr_path):
-                local_qr_manager.generate_qr(matricula)
+                qr_path = local_qr_manager.generate_qr_data(credential["token"], credential["token"])
+            if credential.get("qr_path") != qr_path:
+                db_manager.update_credential_qr_path(credential["token"], qr_path)
 
             if os.path.exists(qr_path):
-                zf.write(qr_path, arcname=f"qr_codes/{matricula}.png")
+                zf.write(qr_path, arcname=f"qr_codes/{credential['token']}_{matricula}.png")
 
     memory_file.seek(0)
     return send_file(
@@ -502,8 +520,10 @@ def generate_qr():
             conn.close()
 
         db_manager.add_student(student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id)
-        qr_path = qr_manager.generate_qr(matricula)
-        return jsonify({"success": True, "qr_path": qr_path})
+        student = db_manager.get_student_by_matricula(matricula)
+        credential = db_manager.ensure_student_participant_credential(student)
+        qr_path = ensure_credential_qr(credential)
+        return jsonify({"success": True, "qr_path": qr_path, "credential_token": credential["token"]})
     except KeyError as e:
         return jsonify({"success": False, "error": f"Falta el campo {str(e)}"}), 400
     except mysql.connector.Error as e:
@@ -554,7 +574,7 @@ def register_attendance():
             return jsonify({"success": False, "error": "Datos de QR no proporcionados"}), 400
 
         qr_data = data["qr_data"]
-        result = attendance_manager.register_attendance_by_matricula(qr_data)
+        result = attendance_manager.register_attendance_by_qr_data(qr_data)
         if result == "Asistencia registrada exitosamente":
             return jsonify({"success": True, "message": result})
         if result == "Este alumno ya fue tomado asistencia":

@@ -1,45 +1,84 @@
-from datetime import datetime, date
+from datetime import datetime
+
 import mysql.connector
 import pytz
 
-# Define zona horaria de Ciudad de México
+
 mexico_tz = pytz.timezone('America/Mexico_City')
+
 
 class AttendanceManager:
     def __init__(self, db_manager):
         self.db_manager = db_manager
+
+    def _register_legacy_attendance(self, cursor, student_id, now_mx, today_mx):
+        cursor.execute("""
+            SELECT id FROM attendance
+            WHERE student_id = %s AND DATE(CONVERT_TZ(timestamp, '+00:00', '-06:00')) = %s
+        """, (student_id, today_mx))
+        if cursor.fetchone():
+            return None
+
+        cursor.execute("""
+            INSERT INTO attendance (student_id, timestamp)
+            VALUES (%s, %s)
+        """, (student_id, now_mx))
+        return cursor.lastrowid
 
     def register_attendance(self, student_id):
         student = self.db_manager.get_student_by_matricula(student_id)
         if not student:
             raise ValueError("Estudiante no encontrado")
 
-        student_id = student[0]
-
         conn = mysql.connector.connect(**self.db_manager.db_config)
         cursor = conn.cursor()
-
-        # Obtener la hora actual en zona horaria de México
         now_mx = datetime.now(mexico_tz)
         today_mx = now_mx.date()
-
-        # Verifica si ya registró asistencia hoy
-        cursor.execute(
-            "SELECT COUNT(*) FROM attendance WHERE student_id = %s AND DATE(CONVERT_TZ(timestamp, '+00:00', '-06:00')) = %s",
-            (student_id, today_mx)
-        )
-        if cursor.fetchone()[0] > 0:
+        attendance_id = self._register_legacy_attendance(cursor, student[0], now_mx, today_mx)
+        if not attendance_id:
             conn.close()
-            raise ValueError("El estudiante ya registró asistencia hoy")
+            raise ValueError("El estudiante ya registro asistencia hoy")
 
-        # Registrar la asistencia
-        cursor.execute(
-            "INSERT INTO attendance (student_id, timestamp) VALUES (%s, %s)",
-            (student_id, now_mx)
-        )
         conn.commit()
         conn.close()
         return "Asistencia registrada exitosamente"
+
+    def register_attendance_by_qr_data(self, qr_data):
+        credential = self.db_manager.get_credential_by_token(qr_data)
+        if not credential:
+            return self.register_attendance_by_matricula(qr_data)
+
+        if credential['credential_status'] != 'active' or credential['participant_status'] != 'active':
+            return "Credencial inactiva"
+
+        legacy_student_id = credential['legacy_student_id']
+        if not legacy_student_id:
+            return "Credencial sin alumno vinculado"
+
+        try:
+            conn = mysql.connector.connect(**self.db_manager.db_config)
+            cursor = conn.cursor()
+            now_mx = datetime.now(mexico_tz)
+            today_mx = now_mx.date()
+            attendance_id = self._register_legacy_attendance(cursor, legacy_student_id, now_mx, today_mx)
+            if not attendance_id:
+                conn.close()
+                return "Este alumno ya fue tomado asistencia"
+
+            conn.commit()
+            conn.close()
+            self.db_manager.record_attendance_event(
+                credential['participant_id'],
+                credential['credential_id'],
+                attendance_id,
+                'entrada',
+                now_mx
+            )
+            return "Asistencia registrada exitosamente"
+        except Exception as e:
+            if 'conn' in locals() and conn.is_connected():
+                conn.close()
+            return f"Error al registrar asistencia: {str(e)}"
 
     def register_attendance_by_matricula(self, matricula):
         try:
@@ -52,26 +91,13 @@ class AttendanceManager:
                 conn.close()
                 return "Estudiante no encontrado"
 
-            student_id = student['id']
-
-            # Hora actual en zona horaria de México
             now_mx = datetime.now(mexico_tz)
             today_mx = now_mx.date()
-
-            # Verifica si ya registró asistencia hoy
-            cursor.execute("""
-                SELECT id FROM attendance 
-                WHERE student_id = %s AND DATE(CONVERT_TZ(timestamp, '+00:00', '-06:00')) = %s
-            """, (student_id, today_mx))
-            if cursor.fetchone():
+            attendance_id = self._register_legacy_attendance(cursor, student['id'], now_mx, today_mx)
+            if not attendance_id:
                 conn.close()
                 return "Este alumno ya fue tomado asistencia"
 
-            # Insertar registro de asistencia
-            cursor.execute("""
-                INSERT INTO attendance (student_id, timestamp)
-                VALUES (%s, %s)
-            """, (student_id, now_mx))
             conn.commit()
             conn.close()
             return "Asistencia registrada exitosamente"
@@ -85,7 +111,7 @@ class AttendanceManager:
         cursor = conn.cursor()
 
         query = """
-            SELECT s.matricula, s.first_name, s.last_name_p, s.last_name_m, s.carrera, p.name, 
+            SELECT s.matricula, s.first_name, s.last_name_p, s.last_name_m, s.carrera, p.name,
                    CONVERT_TZ(a.timestamp, '+00:00', '-06:00') AS local_timestamp
             FROM attendance a
             JOIN students s ON a.student_id = s.id

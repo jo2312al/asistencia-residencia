@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
-{% block title %}Datos de Estudiantes{% endblock %}
+{% block title %}Datos de Participantes{% endblock %}
 {% block content %}
-<h1 class="text-center tecn-blue-text mb-4">Estudiantes - Innovatec TecNM</h1>
+<h1 class="text-center tecn-blue-text mb-4">Participantes - Innovatec TecNM</h1>
 <div class="card shadow">
     <div class="card-header tecn-blue text-white">
-        <h2 class="h5 mb-0">Lista de Estudiantes</h2>
+        <h2 class="h5 mb-0">Lista de Participantes</h2>
     </div>
     <div class="card-body">
         <!-- Formulario de búsqueda y filtro -->
@@ -57,6 +57,7 @@
                         <th scope="col">Apellido M</th>
                         <th scope="col">Carrera</th>
                         <th scope="col">Proyecto</th>
+                        <th scope="col">Folio</th>
                         <th scope="col">Código QR</th>
                     </tr>
                 </thead>
@@ -70,10 +71,11 @@
                             <td>{{ student['last_name_m'] }}</td>
                             <td>{{ student['carrera'] }}</td>
                             <td>{{ student['project_name'] or 'Sin proyecto' }}</td>
+                            <td>{{ student['credential_token'] }}</td>
                             <td>
                                 {% if student['qr_path'] %}
-                                    <a href="{{ student['qr_path'] }}" download="{{ student['matricula'] }}.png">
-                                        <img src="{{ student['qr_path'] }}" alt="QR {{ student['matricula'] }}" width="50" height="50">
+                                    <a href="{{ student['qr_path'] }}" download="{{ student['credential_token'] }}.png">
+                                        <img src="{{ student['qr_path'] }}" alt="QR {{ student['credential_token'] }}" width="50" height="50">
                                         <br>Descargar
                                     </a>
                                 {% else %}
@@ -84,7 +86,7 @@
                         {% endfor %}
                     {% else %}
                         <tr>
-                            <td colspan="7" class="text-center">No se encontraron estudiantes.</td>
+                            <td colspan="8" class="text-center">No se encontraron participantes.</td>
                         </tr>
                     {% endif %}
                 </tbody>
