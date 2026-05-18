@@ -83,6 +83,7 @@ class DatabaseManager:
             full_name VARCHAR(150) NOT NULL,
             email VARCHAR(255),
             phone VARCHAR(50),
+            participant_type VARCHAR(30) NOT NULL DEFAULT 'alumno',
             event_id INT NULL,
             project_id INT,
             status VARCHAR(30) NOT NULL DEFAULT 'active',
@@ -120,6 +121,15 @@ class DatabaseManager:
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             FOREIGN KEY (participant_id) REFERENCES participants(id))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS email_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            event_id INT NULL,
+            recipient VARCHAR(255) NOT NULL,
+            subject VARCHAR(255) NOT NULL,
+            status VARCHAR(30) NOT NULL,
+            error TEXT,
+            created_at DATETIME NOT NULL,
+            FOREIGN KEY (event_id) REFERENCES events(id))''')
         c.execute('''CREATE TABLE IF NOT EXISTS attendance_events (
             id INT AUTO_INCREMENT PRIMARY KEY,
             participant_id VARCHAR(36),
@@ -154,6 +164,7 @@ class DatabaseManager:
         self._ensure_column(c, 'students', 'event_id', 'INT NULL')
         self._ensure_column(c, 'participants', 'event_id', 'INT NULL')
         self._ensure_column(c, 'participants', 'legacy_student_id', 'VARCHAR(36)')
+        self._ensure_column(c, 'participants', 'participant_type', "VARCHAR(30) NOT NULL DEFAULT 'alumno'")
         self._ensure_column(c, 'project_fields', 'field_type', "VARCHAR(50) NOT NULL DEFAULT 'text'")
         self._ensure_column(c, 'project_fields', 'display_order', 'INT NOT NULL DEFAULT 0')
         self._ensure_column(c, 'project_fields', 'created_at', 'DATETIME NULL')
@@ -261,7 +272,7 @@ class DatabaseManager:
         conn.close()
         return not exists
 
-    def add_student(self, student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id, event_id=None):
+    def add_student(self, student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id, event_id=None, email=None, participant_type='alumno'):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
         c.execute('''INSERT INTO students (id, first_name, last_name_p, last_name_m, matricula, carrera, event_id, project_id)
@@ -269,7 +280,7 @@ class DatabaseManager:
                   (student_id, first_name, last_name_p, last_name_m, matricula, carrera, event_id, project_id))
         try:
             participant_id = self._ensure_participant_for_student(
-                c, student_id, first_name, last_name_p, last_name_m, project_id, event_id
+                c, student_id, first_name, last_name_p, last_name_m, project_id, event_id, email, participant_type
             )
             self._ensure_credential_for_participant(c, participant_id)
         except Exception:
@@ -280,7 +291,7 @@ class DatabaseManager:
     def _new_credential_token(self):
         return f"CRD-{secrets.token_hex(4)}"
 
-    def _ensure_participant_for_student(self, cursor, student_id, first_name, last_name_p, last_name_m, project_id, event_id=None):
+    def _ensure_participant_for_student(self, cursor, student_id, first_name, last_name_p, last_name_m, project_id, event_id=None, email=None, participant_type='alumno'):
         cursor.execute("SELECT id FROM participants WHERE legacy_student_id = %s", (student_id,))
         existing = cursor.fetchone()
         full_name = f"{first_name} {last_name_p} {last_name_m}".strip()
@@ -289,18 +300,23 @@ class DatabaseManager:
             participant_id = existing[0]
             cursor.execute(
                 """UPDATE participants
-                   SET full_name = %s, event_id = %s, project_id = %s, updated_at = %s
+                   SET full_name = %s,
+                       email = COALESCE(%s, email),
+                       participant_type = COALESCE(%s, participant_type),
+                       event_id = %s,
+                       project_id = %s,
+                       updated_at = %s
                    WHERE id = %s""",
-                (full_name, event_id, project_id, now, participant_id)
+                (full_name, email or None, participant_type or None, event_id, project_id, now, participant_id)
             )
             return participant_id
 
         participant_id = str(uuid.uuid4())
         cursor.execute(
             """INSERT INTO participants
-               (id, full_name, event_id, project_id, status, legacy_student_id, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, 'active', %s, %s, %s)""",
-            (participant_id, full_name, event_id, project_id, student_id, now, now)
+               (id, full_name, email, participant_type, event_id, project_id, status, legacy_student_id, created_at, updated_at)
+               VALUES (%s, %s, %s, %s, %s, %s, 'active', %s, %s, %s)""",
+            (participant_id, full_name, email, participant_type or 'alumno', event_id, project_id, student_id, now, now)
         )
         return participant_id
 
@@ -435,6 +451,50 @@ class DatabaseManager:
         )
         conn.commit()
         conn.close()
+
+    def update_credentials_sent_status(self, credential_ids, status):
+        if not credential_ids:
+            return
+        placeholders = ",".join(["%s"] * len(credential_ids))
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            f"UPDATE credentials SET sent_status = %s, updated_at = %s WHERE id IN ({placeholders})",
+            tuple([status, datetime.now()] + credential_ids)
+        )
+        conn.commit()
+        conn.close()
+
+    def log_email(self, event_id, recipient, subject, status, error=None):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO email_logs (event_id, recipient, subject, status, error, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            (event_id, recipient, subject, status, error, datetime.now())
+        )
+        conn.commit()
+        conn.close()
+
+    def get_event_credential_rows(self, event_id):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor(dictionary=True)
+        c.execute(
+            """SELECT p.id AS participant_id, p.full_name, p.email, p.participant_type,
+                      p.project_id, pr.name AS project_name, e.name AS event_name,
+                      s.matricula, c.id AS credential_id, c.token, c.qr_path
+               FROM participants p
+               JOIN credentials c ON c.participant_id = p.id
+               LEFT JOIN students s ON p.legacy_student_id = s.id
+               LEFT JOIN projects pr ON p.project_id = pr.id
+               LEFT JOIN events e ON p.event_id = e.id
+               WHERE p.event_id = %s AND p.status = 'active' AND c.status = 'active'
+               ORDER BY p.project_id, p.participant_type, p.full_name""",
+            (event_id,)
+        )
+        rows = c.fetchall()
+        conn.close()
+        return rows
 
     def get_credential_by_token(self, token):
         conn = mysql.connector.connect(**self.db_config)
@@ -735,7 +795,12 @@ class DatabaseManager:
     def get_all_students(self):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
-        c.execute("SELECT id, first_name, last_name_p, last_name_m, matricula, carrera, project_id, event_id FROM students")
+        c.execute(
+            """SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
+                      s.project_id, s.event_id, COALESCE(p.participant_type, 'alumno')
+               FROM students s
+               LEFT JOIN participants p ON p.legacy_student_id = s.id"""
+        )
         students = c.fetchall()
         conn.close()
         return students
@@ -793,6 +858,8 @@ class DatabaseManager:
             student_id = str(uuid.uuid4())
             matricula = str(row['matricula'])
             try:
+                participant_type = str(row['participant_type']).strip().lower() if 'participant_type' in df.columns and not pd.isna(row['participant_type']) else 'alumno'
+                email_value = str(row['email']).strip() if 'email' in df.columns and not pd.isna(row['email']) else None
                 dynamic_values = {}
                 for field in project_fields:
                     field_id = field[0]
@@ -818,6 +885,8 @@ class DatabaseManager:
                         raise ValueError(f"Falta {field_name}")
                     if value:
                         event_dynamic_values[field_id] = value
+                    if self._normalize_field_name(field_name) in ('correo', 'email') and value:
+                        email_value = value
 
                 c.execute('''INSERT INTO students (id, first_name, last_name_p, last_name_m, matricula, carrera, event_id, project_id)
                              VALUES (%s, %s, %s, %s, %s, %s, %s, %s)''',
@@ -830,7 +899,9 @@ class DatabaseManager:
                     str(row['last_name_p']),
                     str(row['last_name_m']),
                     project_id,
-                    event_id
+                    event_id,
+                    email_value,
+                    participant_type
                 )
                 self._ensure_credential_for_participant(c, participant_id)
                 self._save_participant_field_values(c, participant_id, dynamic_values)
@@ -1066,8 +1137,10 @@ class DatabaseManager:
         c = conn.cursor()
         
         query = """
-            SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera, s.project_id, s.event_id
+            SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
+                   s.project_id, s.event_id, COALESCE(p.participant_type, 'alumno')
             FROM students s
+            LEFT JOIN participants p ON p.legacy_student_id = s.id
             WHERE 1=1
         """
         params = []

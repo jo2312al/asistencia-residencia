@@ -1,9 +1,11 @@
 from io import BytesIO
 import os
+import smtplib
 import unicodedata
 import uuid
 import zipfile
 from datetime import datetime
+from email.message import EmailMessage
 from functools import wraps
 
 import mysql.connector
@@ -75,6 +77,51 @@ BASE_REGISTRATION_FIELD_NAMES = {"nombre", "apellido paterno", "apellido materno
 def normalize_field_name(value):
     text = unicodedata.normalize("NFD", value or "")
     return "".join(char for char in text if unicodedata.category(char) != "Mn").strip().lower()
+
+
+def get_mail_config():
+    server = os.getenv("MAIL_SERVER") or os.getenv("SMTP_HOST")
+    username = os.getenv("MAIL_USERNAME") or os.getenv("SMTP_USER")
+    password = os.getenv("MAIL_PASSWORD") or os.getenv("SMTP_PASSWORD")
+    sender = os.getenv("MAIL_DEFAULT_SENDER") or username
+    return {
+        "server": server,
+        "port": int(os.getenv("MAIL_PORT", os.getenv("SMTP_PORT", "587"))),
+        "username": username,
+        "password": password,
+        "sender": sender,
+        "use_tls": str_to_bool(os.getenv("MAIL_USE_TLS", "true"), default=True),
+        "use_ssl": str_to_bool(os.getenv("MAIL_USE_SSL", "false"), default=False),
+    }
+
+
+def send_mail(recipient, subject, body, attachments=None):
+    config = get_mail_config()
+    missing = [key for key in ("server", "username", "password", "sender") if not config.get(key)]
+    if missing:
+        raise RuntimeError("Configura SMTP en Azure: MAIL_SERVER, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD y MAIL_DEFAULT_SENDER")
+
+    message = EmailMessage()
+    message["From"] = config["sender"]
+    message["To"] = recipient
+    message["Subject"] = subject
+    message.set_content(body)
+
+    for path, filename in attachments or []:
+        with open(path, "rb") as attachment:
+            message.add_attachment(
+                attachment.read(),
+                maintype="image",
+                subtype="png",
+                filename=filename,
+            )
+
+    smtp_cls = smtplib.SMTP_SSL if config["use_ssl"] else smtplib.SMTP
+    with smtp_cls(config["server"], config["port"], timeout=30) as smtp:
+        if config["use_tls"] and not config["use_ssl"]:
+            smtp.starttls()
+        smtp.login(config["username"], config["password"])
+        smtp.send_message(message)
 
 
 qr_manager = QRManager()
@@ -732,6 +779,7 @@ def data():
             "carrera": student[5],
             "project_id": student[6],
             "event_id": student[7] if len(student) > 7 else None,
+            "participant_type": student[8] if len(student) > 8 else "alumno",
             "project_name": project_name,
             "credential_token": credential_token or "Legacy",
             "is_legacy_qr": is_legacy_qr,
@@ -909,6 +957,83 @@ def download_all_qrs():
     )
 
 
+def build_credential_email_batches(event_id):
+    rows = db_manager.get_event_credential_rows(event_id)
+    projects_with_advisors = {}
+    for row in rows:
+        participant_type = (row.get("participant_type") or "").lower()
+        if participant_type == "asesor" and row.get("email") and row.get("project_id"):
+            projects_with_advisors.setdefault(row["project_id"], []).append(row["email"])
+
+    batches = []
+    grouped_by_project = {}
+    for row in rows:
+        grouped_by_project.setdefault(row.get("project_id"), []).append(row)
+
+    for project_id, project_rows in grouped_by_project.items():
+        advisor_emails = projects_with_advisors.get(project_id, [])
+        if advisor_emails:
+            for email in advisor_emails:
+                batches.append({"recipient": email, "rows": project_rows, "grouped": True})
+        else:
+            for row in project_rows:
+                if row.get("email"):
+                    batches.append({"recipient": row["email"], "rows": [row], "grouped": False})
+    return batches
+
+
+@app.route("/send_event_credentials", methods=["POST"])
+@login_required
+@role_required("admin")
+def send_event_credentials():
+    event_id = request.form.get("event_id") or None
+    if not event_id:
+        flash("Selecciona un evento para enviar credenciales", "warning")
+        return redirect(url_for("data"))
+
+    event = db_manager.get_event(event_id)
+    if not event:
+        flash("Evento no encontrado", "danger")
+        return redirect(url_for("data"))
+
+    batches = build_credential_email_batches(event_id)
+    if not batches:
+        flash("No hay correos disponibles para enviar credenciales", "warning")
+        return redirect(url_for("data", event_id=event_id))
+
+    sent_count = 0
+    error_count = 0
+    subject = f"Credenciales para {event[1]}"
+    for batch in batches:
+        attachments = []
+        credential_ids = []
+        for row in batch["rows"]:
+            qr_path = ensure_credential_qr({"token": row["token"], "qr_path": row.get("qr_path")})
+            if os.path.exists(qr_path):
+                filename = f"{row.get('matricula') or row['token']}.png"
+                attachments.append((qr_path, filename))
+                credential_ids.append(row["credential_id"])
+
+        names = "\n".join(f"- {row['full_name']}" for row in batch["rows"])
+        body = (
+            f"Hola,\n\nAdjuntamos las credenciales para {event[1]}.\n\n"
+            f"Participantes:\n{names}\n\n"
+            "Presenten el QR al momento del registro de asistencia.\n"
+        )
+        try:
+            send_mail(batch["recipient"], subject, body, attachments)
+            db_manager.update_credentials_sent_status(credential_ids, "sent")
+            db_manager.log_email(event_id, batch["recipient"], subject, "sent")
+            sent_count += 1
+        except Exception as exc:
+            db_manager.update_credentials_sent_status(credential_ids, "error")
+            db_manager.log_email(event_id, batch["recipient"], subject, "error", str(exc))
+            error_count += 1
+
+    flash(f"Envios completados: {sent_count}. Errores: {error_count}.", "success" if error_count == 0 else "warning")
+    return redirect(url_for("data", event_id=event_id))
+
+
 @app.route("/generate_qr", methods=["POST"])
 @login_required
 @role_required("admin", api=True)
@@ -923,6 +1048,7 @@ def generate_qr():
         carrera = data["carrera"]
         event_id = data.get("event_id") or None
         project_id = data.get("project_id") or None
+        participant_type = data.get("participant_type") or "alumno"
 
         if not event_id:
             return jsonify({"success": False, "error": "Selecciona un evento"}), 400
@@ -936,6 +1062,7 @@ def generate_qr():
                 return jsonify({"success": False, "error": f"Proyecto con ID {project_id} no existe"}), 400
 
         dynamic_values = {}
+        email_value = None
         if event_id:
             for field in db_manager.get_event_fields(event_id):
                 field_id = field[0]
@@ -948,8 +1075,21 @@ def generate_qr():
                     return jsonify({"success": False, "error": f"Falta el campo {field_name}"}), 400
                 if value:
                     dynamic_values[field_id] = value
+                if normalize_field_name(field_name) in ("correo", "email") and value:
+                    email_value = value
 
-        db_manager.add_student(student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id, event_id)
+        db_manager.add_student(
+            student_id,
+            first_name,
+            last_name_p,
+            last_name_m,
+            matricula,
+            carrera,
+            project_id,
+            event_id,
+            email_value,
+            participant_type,
+        )
         student = db_manager.get_student_by_matricula(matricula)
         credential = db_manager.ensure_student_participant_credential(student)
         participant_id = db_manager.get_participant_id_by_student_id(student[0])

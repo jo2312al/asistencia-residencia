@@ -25,6 +25,17 @@
                         <option value="">Seleccione primero un evento</option>
                     </select>
                 </div>
+                <div class="col-md-4">
+                    <label for="participant_type" class="form-label">Tipo de participante</label>
+                    <select class="form-select" id="participant_type" name="participant_type" required>
+                        <option value="alumno">Alumno</option>
+                        <option value="asesor">Asesor</option>
+                        <option value="expositor">Expositor</option>
+                        <option value="conferencista">Conferencista</option>
+                        <option value="juez">Juez</option>
+                        <option value="invitado">Invitado</option>
+                    </select>
+                </div>
                 <div class="col-md-6">
                     <label for="first_name" class="form-label">Nombre</label>
                     <input type="text" class="form-control" id="first_name" name="first_name" required>
@@ -37,11 +48,11 @@
                     <label for="last_name_m" class="form-label">Apellido Materno</label>
                     <input type="text" class="form-control" id="last_name_m" name="last_name_m" required>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label for="matricula" class="form-label">Matricula</label>
                     <input type="text" class="form-control" id="matricula" name="matricula" required>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label for="carrera" class="form-label">Carrera</label>
                     <input type="text" class="form-control" id="carrera" name="carrera" required>
                 </div>
@@ -63,7 +74,7 @@
                 <div class="col-lg-5">
                     <label for="excel_file" class="form-label">Seleccionar archivo Excel</label>
                     <input type="file" class="form-control" id="excel_file" name="excel_file" accept=".xlsx,.xls" required>
-                    <div class="form-text">Columnas base: first_name, last_name_p, last_name_m, matricula, carrera.</div>
+                    <div class="form-text">Columnas base: first_name, last_name_p, last_name_m, matricula, carrera. Opcionales: email, participant_type.</div>
                 </div>
                 <div class="col-lg-3">
                     <label for="event_id_excel" class="form-label">Evento</label>

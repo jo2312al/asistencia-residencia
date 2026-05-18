@@ -58,6 +58,12 @@
             <a href="{{ url_for('download_all_credentials_rect_pdf', event_id=event_id_filter) }}" class="btn btn-outline-primary ms-2">
                 <i class="bi bi-file-earmark-pdf"></i> Credenciales Rectangulares
             </a>
+            <form method="POST" action="{{ url_for('send_event_credentials') }}" class="d-inline">
+                <input type="hidden" name="event_id" value="{{ event_id_filter }}">
+                <button type="submit" class="btn btn-outline-success ms-2" {% if not event_id_filter %}disabled{% endif %}>
+                    Enviar credenciales
+                </button>
+            </form>
         </div>
 
         <!-- Tabla de estudiantes con contenedor responsivo -->
@@ -70,6 +76,7 @@
                         <th scope="col">Apellido P</th>
                         <th scope="col">Apellido M</th>
                         <th scope="col">Carrera</th>
+                        <th scope="col">Tipo</th>
                         <th scope="col">Proyecto</th>
                         <th scope="col">Datos adicionales</th>
                         <th scope="col">Código QR</th>
@@ -84,6 +91,7 @@
                             <td>{{ student['last_name_p'] }}</td>
                             <td>{{ student['last_name_m'] }}</td>
                             <td>{{ student['carrera'] }}</td>
+                            <td>{{ student['participant_type'] }}</td>
                             <td>{{ student['project_name'] or 'Sin proyecto' }}</td>
                             <td>
                                 {% if student['custom_fields'] %}
@@ -110,7 +118,7 @@
                         {% endfor %}
                     {% else %}
                         <tr>
-                            <td colspan="8" class="text-center">No se encontraron participantes.</td>
+                            <td colspan="9" class="text-center">No se encontraron participantes.</td>
                         </tr>
                     {% endif %}
                 </tbody>
