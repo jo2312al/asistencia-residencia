@@ -640,6 +640,19 @@ class DatabaseManager:
         conn.close()
         return event
 
+    def get_latest_event(self):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """SELECT id, name, description, start_datetime, end_datetime, location, status, event_type, duplicate_policy
+               FROM events
+               ORDER BY COALESCE(start_datetime, created_at) DESC, id DESC
+               LIMIT 1"""
+        )
+        event = c.fetchone()
+        conn.close()
+        return event
+
     def get_active_events(self):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
@@ -815,18 +828,24 @@ class DatabaseManager:
         conn.close()
         return deleted > 0
 
-    def get_total_students(self):
+    def get_total_students(self, event_id=None):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM students")
+        if event_id:
+            c.execute("SELECT COUNT(*) FROM students WHERE event_id = %s", (event_id,))
+        else:
+            c.execute("SELECT COUNT(*) FROM students")
         total = c.fetchone()[0]
         conn.close()
         return total
 
-    def get_total_attendance(self):
+    def get_total_attendance(self, event_id=None):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM attendance")
+        if event_id:
+            c.execute("SELECT COUNT(*) FROM attendance_events WHERE event_id = %s", (event_id,))
+        else:
+            c.execute("SELECT COUNT(*) FROM attendance")
         total = c.fetchone()[0]
         conn.close()
         return total
@@ -1017,7 +1036,7 @@ class DatabaseManager:
 
         workbook = xlsxwriter.Workbook(report_path)
         worksheet = workbook.add_worksheet()
-        worksheet.write('A1', 'Reporte de Asistencias - Innovatec TecNM')
+        worksheet.write('A1', 'Reporte de Asistencias - AsisTec')
         headers = ['Matrícula', 'Nombre', 'Apellido P', 'Apellido M', 'Carrera', 'Proyecto', 'Fecha/Hora']
         for col, header in enumerate(headers):
             worksheet.write(1, col, header)
@@ -1159,7 +1178,7 @@ class DatabaseManager:
         doc = SimpleDocTemplate(report_path, pagesize=letter)
         elements = []
         styles = getSampleStyleSheet()
-        elements.append(Paragraph("Reporte de Asistencias - Innovatec TecNM", styles['Title']))
+        elements.append(Paragraph("Reporte de Asistencias - AsisTec", styles['Title']))
 
         data = [['Matrícula', 'Nombre', 'Apellido P', 'Apellido M', 'Carrera', 'Proyecto', 'Fecha/Hora']]
         for row in report_data:

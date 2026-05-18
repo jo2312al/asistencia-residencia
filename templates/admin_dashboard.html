@@ -1,24 +1,42 @@
 {% extends 'base.html' %}
 {% block title %}Dashboard Admin{% endblock %}
 {% block content %}
-<section class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-    <div>
-        <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Panel de control</p>
-        <h1 class="tecn-blue-text !mb-1">Dashboard Admin</h1>
-        <p class="text-slate-500">Gestiona eventos, participantes, credenciales y reportes desde AsisTec.</p>
-    </div>
-    <div class="flex flex-wrap gap-2">
-        <a class="btn tecn-blue text-white" href="{{ url_for('events') }}">Crear evento</a>
-        <a class="btn btn-outline-primary" href="{{ url_for('register') }}">Registrar participantes</a>
-        <a class="btn btn-outline-primary" href="{{ url_for('scan') }}">Escanear</a>
-    </div>
+<section class="mb-6">
+    <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Panel de control</p>
+    <h1 class="tecn-blue-text !mb-1">Dashboard Admin</h1>
+    {% if latest_event %}
+    <p class="text-slate-500">Resumen del evento mas reciente: <strong class="text-slate-800">{{ latest_event[1] }}</strong></p>
+    {% else %}
+    <p class="text-slate-500">Aun no hay eventos registrados. Crea un evento para comenzar.</p>
+    {% endif %}
 </section>
+
+{% if latest_event %}
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-center">
+            <div class="col-lg-7">
+                <p class="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Evento activo de referencia</p>
+                <h2 class="h4 mb-1">{{ latest_event[1] }}</h2>
+                <p class="mb-0 text-slate-500">
+                    {{ latest_event[7] }}{% if latest_event[5] %} · {{ latest_event[5] }}{% endif %}
+                    {% if latest_event[3] %} · {{ latest_event[3] }}{% endif %}
+                </p>
+            </div>
+            <div class="col-lg-5 text-lg-end">
+                <a class="btn btn-outline-primary" href="{{ url_for('data') }}">Ver participantes por evento</a>
+                <a class="btn tecn-blue text-white ms-lg-2" href="{{ url_for('data', event_id=latest_event[0]) }}">Abrir este evento</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="row g-3 mb-4">
     <div class="col-md-6">
         <div class="card h-100">
             <div class="card-body">
-                <p class="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Participantes</p>
+                <p class="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Participantes del evento</p>
                 <p class="display-6 mb-0">{{ total_students }}</p>
             </div>
         </div>
@@ -26,7 +44,7 @@
     <div class="col-md-6">
         <div class="card h-100">
             <div class="card-body">
-                <p class="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Asistencias</p>
+                <p class="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Asistencias del evento</p>
                 <p class="display-6 mb-0">{{ total_attendance }}</p>
             </div>
         </div>
@@ -35,10 +53,13 @@
 
 <div class="card">
     <div class="card-header">
-        <h2 class="h5 mb-0">Generar reporte de asistencias</h2>
+        <h2 class="h5 mb-0">Generar reporte del evento</h2>
     </div>
     <div class="card-body">
         <form id="report-form" method="POST">
+            {% if latest_event %}
+            <input type="hidden" name="event_id" value="{{ latest_event[0] }}">
+            {% endif %}
             <div class="row g-3">
                 <div class="col-md-3">
                     <label for="start_date" class="form-label">Fecha de inicio</label>
@@ -49,7 +70,7 @@
                     <input type="date" class="form-control" id="end_date" name="end_date">
                 </div>
                 <div class="col-md-4">
-                    <label for="project_id" class="form-label">Proyecto</label>
+                    <label for="project_id" class="form-label">Proyecto del evento</label>
                     <select class="form-select" id="project_id" name="project_id">
                         <option value="">Todos los proyectos</option>
                         {% for project in projects %}
@@ -65,7 +86,7 @@
                     </select>
                 </div>
             </div>
-            <button type="submit" class="btn tecn-blue text-white mt-3">Generar reporte</button>
+            <button type="submit" class="btn tecn-blue text-white mt-3" {% if not latest_event %}disabled{% endif %}>Generar reporte</button>
         </form>
         <div id="report-result" class="mt-3"></div>
     </div>

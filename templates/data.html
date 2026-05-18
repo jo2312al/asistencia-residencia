@@ -1,81 +1,83 @@
 {% extends 'base.html' %}
-{% block title %}Datos de Participantes{% endblock %}
+{% block title %}Participantes{% endblock %}
 {% block content %}
 <section class="mb-6">
     <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Credenciales</p>
     <h1 class="tecn-blue-text !mb-1">Participantes</h1>
-    <p class="text-slate-500">Filtra por evento, descarga credenciales o envia QR por correo.</p>
+    <p class="text-slate-500">Primero selecciona un evento; despues consulta participantes, credenciales y envios.</p>
 </section>
+
 <div class="card shadow">
     <div class="card-header tecn-blue text-white">
-        <h2 class="h5 mb-0">Lista de Participantes</h2>
+        <h2 class="h5 mb-0">Seleccionar evento</h2>
     </div>
     <div class="card-body">
-        <!-- Formulario de búsqueda y filtro -->
-        <form method="GET" action="{{ url_for('data') }}" class="mb-3">
-            <div class="row">
+        <form method="GET" action="{{ url_for('data') }}" class="mb-4">
+            <div class="row g-3">
                 <div class="col-md-3">
-                    <label for="matricula_search" class="form-label">Buscar por Matrícula</label>
+                    <label for="event_filter" class="form-label">Evento</label>
+                    <select class="form-control" id="event_filter" name="event_id" required>
+                        <option value="">Selecciona un evento</option>
+                        {% for event in events %}
+                        <option value="{{ event[0] }}" {% if event_id_filter == event[0]|string %}selected{% endif %}>
+                            {{ event[1] }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="matricula_search" class="form-label">Matricula</label>
                     <input type="text" class="form-control" id="matricula_search" name="matricula" value="{{ matricula_search }}">
                 </div>
                 <div class="col-md-3">
-                    <label for="apellido_p_search" class="form-label">Buscar por Apellido Paterno</label>
+                    <label for="apellido_p_search" class="form-label">Apellido paterno</label>
                     <input type="text" class="form-control" id="apellido_p_search" name="apellido_p" value="{{ apellido_p_search }}">
                 </div>
                 <div class="col-md-3">
-                    <label for="project_filter" class="form-label">Filtrar por Proyecto</label>
+                    <label for="project_filter" class="form-label">Proyecto</label>
                     <select class="form-control" id="project_filter" name="project_id">
                         <option value="">Todos los proyectos</option>
                         {% for project in projects %}
-                            <option value="{{ project[0] }}" {% if project_id_filter == project[0]|string %}selected{% endif %}>
-                                {{ project[1] }}
-                            </option>
+                        <option value="{{ project[0] }}" {% if project_id_filter == project[0]|string %}selected{% endif %}>
+                            {{ project[1] }}
+                        </option>
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-3">
-                    <label for="event_filter" class="form-label">Filtrar por Evento</label>
-                    <select class="form-control" id="event_filter" name="event_id">
-                        <option value="">Todos los eventos</option>
-                        {% for event in events %}
-                            <option value="{{ event[0] }}" {% if event_id_filter == event[0]|string %}selected{% endif %}>
-                                {{ event[1] }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-3 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary me-2">Buscar</button>
+                <div class="col-12 d-flex flex-wrap gap-2">
+                    <button type="submit" class="btn btn-primary">Buscar</button>
                     <a href="{{ url_for('data') }}" class="btn btn-secondary">Limpiar</a>
                 </div>
             </div>
         </form>
 
-        <!-- Botones de descarga -->
+        {% if selected_event %}
+        <div class="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+            <p class="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Evento seleccionado</p>
+            <p class="mb-0 text-lg font-semibold text-slate-900">{{ selected_event[1] }}</p>
+        </div>
+
         <div class="mb-3 d-flex flex-wrap gap-2">
-            <a href="{{ url_for('download_all_qrs', event_id=event_id_filter) }}" class="btn btn-primary me-2">
-                <i class="bi bi-download"></i> Descargar Todos los Códigos QR (ZIP)
+            <a href="{{ url_for('download_all_qrs', event_id=event_id_filter) }}" class="btn btn-primary">
+                Descargar QR (ZIP)
             </a>
             <a href="{{ url_for('download_all_qrs_pdf', event_id=event_id_filter) }}" class="btn btn-primary">
-                <i class="bi bi-file-earmark-pdf"></i> Credenciales (PDF)
+                Credenciales (PDF)
+            </a>
+            <a href="{{ url_for('download_all_credentials_rect_pdf', event_id=event_id_filter) }}" class="btn btn-outline-primary">
+                Credenciales rectangulares
             </a>
             <form method="POST" action="{{ url_for('send_event_credentials') }}" class="d-inline">
                 <input type="hidden" name="event_id" value="{{ event_id_filter }}">
-                <button type="submit" class="btn btn-outline-success ms-2" {% if not event_id_filter %}disabled{% endif %}>
-                    Enviar credenciales
-                </button>
+                <button type="submit" class="btn btn-outline-success">Enviar credenciales</button>
             </form>
-            <a href="{{ url_for('download_all_credentials_rect_pdf', event_id=event_id_filter) }}" class="btn btn-outline-primary ms-2">
-                <i class="bi bi-file-earmark-pdf"></i> Credenciales Rectangulares
-            </a>
         </div>
 
-        <!-- Tabla de estudiantes con contenedor responsivo -->
         <div class="table-responsive">
-            <table class="table table-striped">
+            <table class="table table-striped align-middle">
                 <thead>
                     <tr>
-                        <th scope="col">Matrícula</th>
+                        <th scope="col">Matricula</th>
                         <th scope="col">Nombre</th>
                         <th scope="col">Apellido P</th>
                         <th scope="col">Apellido M</th>
@@ -83,7 +85,7 @@
                         <th scope="col">Tipo</th>
                         <th scope="col">Proyecto</th>
                         <th scope="col">Datos adicionales</th>
-                        <th scope="col">Código QR</th>
+                        <th scope="col">QR</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -122,39 +124,41 @@
                         {% endfor %}
                     {% else %}
                         <tr>
-                            <td colspan="9" class="text-center">No se encontraron participantes.</td>
+                            <td colspan="9" class="text-center">No se encontraron participantes para este evento.</td>
                         </tr>
                     {% endif %}
                 </tbody>
             </table>
         </div>
 
-        <!-- Controles de paginación -->
         {% if total_pages > 1 %}
-        <nav aria-label="Page navigation">
+        <nav aria-label="Paginacion de participantes">
             <ul class="pagination justify-content-center">
-                <!-- Botón "Anterior" -->
                 <li class="page-item {% if page == 1 %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('data', page=page-1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter) }}" aria-label="Previous">
-                        <span aria-hidden="true">«</span>
+                    <a class="page-link" href="{{ url_for('data', page=page-1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter) }}" aria-label="Anterior">
+                        <span aria-hidden="true">&laquo;</span>
                     </a>
                 </li>
 
-                <!-- Números de página -->
                 {% for p in range(1, total_pages + 1) %}
                     <li class="page-item {% if p == page %}active{% endif %}">
                         <a class="page-link" href="{{ url_for('data', page=p, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter) }}">{{ p }}</a>
                     </li>
                 {% endfor %}
 
-                <!-- Botón "Siguiente" -->
                 <li class="page-item {% if page == total_pages %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('data', page=page+1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter) }}" aria-label="Next">
-                        <span aria-hidden="true">»</span>
+                    <a class="page-link" href="{{ url_for('data', page=page+1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter) }}" aria-label="Siguiente">
+                        <span aria-hidden="true">&raquo;</span>
                     </a>
                 </li>
             </ul>
         </nav>
+        {% endif %}
+        {% else %}
+        <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
+            <h2 class="h5 mb-2">Selecciona un evento para ver participantes</h2>
+            <p class="mb-0 text-slate-500">La lista, descargas y envios se muestran por evento para evitar mezclar credenciales.</p>
+        </div>
         {% endif %}
     </div>
 </div>

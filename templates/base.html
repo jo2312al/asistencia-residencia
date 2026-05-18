@@ -36,7 +36,7 @@
     <header class="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur">
         <nav class="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
             <a class="group flex items-center gap-3 no-underline" href="{{ url_for('role_home') if current_user.is_authenticated else url_for('login') }}">
-                <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-700 text-sm font-bold text-white shadow-sm">AT</span>
+                <img class="h-11 w-11 rounded-xl object-contain shadow-sm" src="{{ url_for('static', filename='img/asistec.webp') }}" alt="AsisTec">
                 <span>
                     <span class="block text-lg font-semibold tracking-tight text-slate-950">AsisTec</span>
                     <span class="hidden text-xs font-medium text-slate-500 sm:block">Eventos, credenciales y asistencia</span>
@@ -52,20 +52,15 @@
                     {% if current_user.is_authenticated %}
                         {% if current_user.role == 'admin' %}
                         <a class="app-nav-link" href="{{ url_for('admin_dashboard') }}">Dashboard</a>
-                        <div class="dropdown">
-                            <button class="app-nav-link dropdown-toggle" type="button" data-bs-toggle="dropdown">Operacion</button>
-                            <ul class="dropdown-menu dropdown-menu-end app-dropdown">
-                                <li><a class="dropdown-item" href="{{ url_for('events') }}">Eventos</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('register') }}">Registrar participantes</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('data') }}">Participantes</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('scan') }}">Escanear</a></li>
-                            </ul>
-                        </div>
+                        <a class="app-nav-link" href="{{ url_for('events') }}">Crear evento</a>
+                        <a class="app-nav-link" href="{{ url_for('data') }}">Ver participantes</a>
+                        <a class="app-nav-link" href="{{ url_for('register') }}">Registrar</a>
+                        <a class="app-nav-link" href="{{ url_for('scan') }}">Escanear</a>
+                        <a class="app-nav-link" href="{{ url_for('create_user') }}">Usuarios</a>
                         <div class="dropdown">
                             <button class="app-nav-link dropdown-toggle" type="button" data-bs-toggle="dropdown">Administracion</button>
                             <ul class="dropdown-menu dropdown-menu-end app-dropdown">
                                 <li><a class="dropdown-item" href="{{ url_for('reports') }}">Reportes</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('create_user') }}">Usuarios</a></li>
                                 <li><a class="dropdown-item" href="{{ url_for('settings') }}">Configuracion</a></li>
                             </ul>
                         </div>

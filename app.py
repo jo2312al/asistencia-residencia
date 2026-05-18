@@ -466,12 +466,15 @@ def dashboard():
 @login_required
 @role_required("admin")
 def admin_dashboard():
-    projects = db_manager.get_all_projects()
+    latest_event = db_manager.get_latest_event()
+    latest_event_id = latest_event[0] if latest_event else None
+    projects = db_manager.get_projects_by_event(latest_event_id) if latest_event_id else []
     return render_template(
         "admin_dashboard.html",
         projects=projects,
-        total_students=db_manager.get_total_students(),
-        total_attendance=db_manager.get_total_attendance(),
+        latest_event=latest_event,
+        total_students=db_manager.get_total_students(latest_event_id),
+        total_attendance=db_manager.get_total_attendance(latest_event_id),
     )
 
 
@@ -780,12 +783,16 @@ def data():
 
     projects = db_manager.get_all_projects()
     events = db_manager.get_all_events()
-    all_students = db_manager.get_all_students_filtered(
-        matricula_search,
-        apellido_p_search,
-        project_id_filter,
-        event_id_filter,
-    )
+    selected_event = db_manager.get_event(event_id_filter) if event_id_filter else None
+    projects = db_manager.get_projects_by_event(event_id_filter) if event_id_filter else []
+    all_students = []
+    if event_id_filter:
+        all_students = db_manager.get_all_students_filtered(
+            matricula_search,
+            apellido_p_search,
+            project_id_filter,
+            event_id_filter,
+        )
 
     total_students = len(all_students)
     total_pages = (total_students + per_page - 1) // per_page
@@ -836,6 +843,7 @@ def data():
         apellido_p_search=apellido_p_search,
         project_id_filter=project_id_filter,
         event_id_filter=event_id_filter,
+        selected_event=selected_event,
     )
 
 
