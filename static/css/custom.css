@@ -1,6 +1,8 @@
 :root {
-    --asistec-brand: #0b5aa4;
-    --asistec-brand-dark: #10324d;
+    --asistec-brand: #08a77f;
+    --asistec-brand-dark: #08223c;
+    --asistec-brand-mid: #047c70;
+    --asistec-brand-soft: #e8fbf1;
     --asistec-surface: #ffffff;
     --asistec-border: #e2e8f0;
     --asistec-muted: #64748b;
@@ -8,12 +10,50 @@
 
 body {
     background:
-        radial-gradient(circle at top left, rgba(15, 111, 198, 0.10), transparent 32rem),
-        linear-gradient(180deg, #f8fafc 0%, #eef4fb 100%);
+        radial-gradient(circle at top left, rgba(16, 167, 121, 0.12), transparent 32rem),
+        radial-gradient(circle at top right, rgba(8, 34, 60, 0.08), transparent 28rem),
+        linear-gradient(180deg, #f8fafc 0%, #edf7f4 100%);
 }
 
 a {
     color: var(--asistec-brand);
+}
+
+.app-brand-logo {
+    height: 3rem;
+    width: 3rem;
+    border-radius: 0.9rem;
+    object-fit: contain;
+    background: #fff;
+    box-shadow: 0 10px 30px rgba(8, 34, 60, 0.10);
+}
+
+.app-brand-fallback,
+.app-login-fallback {
+    align-items: center;
+    background: linear-gradient(135deg, var(--asistec-brand), var(--asistec-brand-dark));
+    border-radius: 0.9rem;
+    color: #fff;
+    display: inline-flex;
+    font-size: 0.8rem;
+    font-weight: 850;
+    height: 3rem;
+    justify-content: center;
+    letter-spacing: 0;
+    padding: 0 0.65rem;
+    box-shadow: 0 10px 30px rgba(8, 34, 60, 0.10);
+}
+
+.app-login-fallback {
+    height: 3.5rem;
+    width: 6.5rem;
+}
+
+.app-navbar-toggler {
+    border: 1px solid var(--asistec-border) !important;
+    border-radius: 0.9rem !important;
+    padding: 0.55rem 0.7rem !important;
+    box-shadow: none !important;
 }
 
 .app-nav-link {
@@ -31,9 +71,45 @@ a {
 
 .app-nav-link:hover,
 .app-nav-link:focus {
-    background: #eef6ff;
+    background: var(--asistec-brand-soft);
     color: var(--asistec-brand);
     text-decoration: none;
+}
+
+.app-role-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    padding: 0.45rem 0.75rem;
+    text-transform: uppercase;
+}
+
+.app-session-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.85rem;
+    background: var(--asistec-brand-dark);
+    color: #fff !important;
+    font-size: 0.9rem;
+    font-weight: 750;
+    padding: 0.62rem 1rem;
+    text-decoration: none;
+    transition: background-color 160ms ease, transform 160ms ease;
+}
+
+.app-session-link:hover,
+.app-session-link:focus {
+    background: var(--asistec-brand-mid);
+    color: #fff !important;
+    text-decoration: none;
+    transform: translateY(-1px);
 }
 
 .app-dropdown {
@@ -52,7 +128,7 @@ a {
 
 .dropdown-item:hover,
 .dropdown-item:focus {
-    background: #eef6ff;
+    background: var(--asistec-brand-soft);
     color: var(--asistec-brand);
 }
 
@@ -70,7 +146,7 @@ h1 {
 }
 
 .tecn-blue {
-    background: linear-gradient(135deg, var(--asistec-brand), var(--asistec-brand-dark)) !important;
+    background: linear-gradient(135deg, var(--asistec-brand), var(--asistec-brand-mid), var(--asistec-brand-dark)) !important;
 }
 
 .tecn-red {
@@ -123,7 +199,7 @@ h1 {
 .form-control:focus,
 .form-select:focus {
     border-color: var(--asistec-brand) !important;
-    box-shadow: 0 0 0 4px rgba(15, 111, 198, 0.14) !important;
+    box-shadow: 0 0 0 4px rgba(8, 167, 127, 0.14) !important;
 }
 
 .form-text,
@@ -150,12 +226,12 @@ h1 {
 }
 
 .btn-outline-primary {
-    border-color: #bfdbfe !important;
+    border-color: #b8efe0 !important;
     color: var(--asistec-brand) !important;
 }
 
 .btn-outline-primary:hover {
-    background: #eef6ff !important;
+    background: var(--asistec-brand-soft) !important;
     color: var(--asistec-brand-dark) !important;
 }
 
@@ -242,5 +318,21 @@ h1 {
 
     .d-inline {
         display: block !important;
+    }
+}
+
+@media (max-width: 1199.98px) {
+    .navbar-collapse {
+        margin-top: 0.9rem;
+    }
+
+    .navbar-nav {
+        align-items: stretch !important;
+    }
+
+    .app-nav-link,
+    .app-session-link,
+    .app-role-pill {
+        width: 100%;
     }
 }

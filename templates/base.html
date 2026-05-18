@@ -11,11 +11,11 @@
                 extend: {
                     colors: {
                         brand: {
-                            50: '#eef6ff',
-                            100: '#d9ecff',
-                            600: '#0f6fc6',
-                            700: '#0b5aa4',
-                            900: '#10324d'
+                            50: '#eefdf5',
+                            100: '#d9fbe8',
+                            600: '#10a779',
+                            700: '#047c70',
+                            900: '#08223c'
                         }
                     },
                     boxShadow: {
@@ -33,31 +33,32 @@
     <script src="https://cdn.jsdelivr.net/npm/jsQR@1.4.0/dist/jsQR.min.js"></script>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
-    <header class="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur">
-        <nav class="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-            <a class="group flex items-center gap-3 no-underline" href="{{ url_for('role_home') if current_user.is_authenticated else url_for('login') }}">
-                <img class="h-11 w-11 rounded-xl object-contain shadow-sm" src="{{ url_for('static', filename='img/asistec.webp') }}" alt="AsisTec">
-                <span>
-                    <span class="block text-lg font-semibold tracking-tight text-slate-950">AsisTec</span>
-                    <span class="hidden text-xs font-medium text-slate-500 sm:block">Eventos, credenciales y asistencia</span>
+    <header class="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur">
+        <nav class="navbar navbar-expand-xl mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+            <a class="navbar-brand d-flex align-items-center gap-3 me-xl-4 no-underline" href="{{ url_for('role_home') if current_user.is_authenticated else url_for('login') }}">
+                <img class="app-brand-logo" src="{{ url_for('static', filename='img/asistec.webp') }}" alt="AsisTec" onerror="this.classList.add('d-none'); this.nextElementSibling.classList.remove('d-none');">
+                <span class="app-brand-fallback d-none">AsisTec</span>
+                <span class="d-flex flex-column lh-sm">
+                    <span class="text-lg font-semibold tracking-tight text-slate-950">AsisTec</span>
+                    <span class="d-none d-sm-block text-xs font-medium text-slate-500">Eventos, credenciales y asistencia</span>
                 </span>
             </a>
 
-            <button class="inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 md:hidden" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                Menu
+            <button class="navbar-toggler app-navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Abrir menu">
+                <span class="navbar-toggler-icon"></span>
             </button>
 
-            <div class="collapse navbar-collapse md:!block md:flex md:items-center" id="navbarNav">
-                <div class="mt-4 flex flex-col gap-2 md:mt-0 md:flex-row md:items-center">
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <div class="navbar-nav ms-auto align-items-xl-center gap-1">
                     {% if current_user.is_authenticated %}
                         {% if current_user.role == 'admin' %}
                         <a class="app-nav-link" href="{{ url_for('admin_dashboard') }}">Dashboard</a>
                         <a class="app-nav-link" href="{{ url_for('events') }}">Crear evento</a>
-                        <a class="app-nav-link" href="{{ url_for('data') }}">Ver participantes</a>
-                        <a class="app-nav-link" href="{{ url_for('register') }}">Registrar</a>
+                        <a class="app-nav-link" href="{{ url_for('register') }}">Añadir participante</a>
                         <a class="app-nav-link" href="{{ url_for('scan') }}">Escanear</a>
-                        <a class="app-nav-link" href="{{ url_for('create_user') }}">Usuarios</a>
-                        <div class="dropdown">
+                        <a class="app-nav-link" href="{{ url_for('data') }}">Participantes</a>
+                        <a class="app-nav-link" href="{{ url_for('create_user') }}">Crear usuario</a>
+                        <div class="dropdown nav-item">
                             <button class="app-nav-link dropdown-toggle" type="button" data-bs-toggle="dropdown">Administracion</button>
                             <ul class="dropdown-menu dropdown-menu-end app-dropdown">
                                 <li><a class="dropdown-item" href="{{ url_for('reports') }}">Reportes</a></li>
@@ -72,10 +73,10 @@
                         {% else %}
                         <a class="app-nav-link" href="{{ url_for('guest_dashboard') }}">Dashboard</a>
                         {% endif %}
-                        <span class="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600">{{ current_user.role }}</span>
-                        <a class="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white no-underline transition hover:bg-slate-700" href="{{ url_for('logout') }}">Salir</a>
+                        <span class="app-role-pill">{{ current_user.role }}</span>
+                        <a class="app-session-link" href="{{ url_for('logout') }}">Logout</a>
                     {% else %}
-                        <a class="inline-flex items-center justify-center rounded-xl bg-brand-700 px-4 py-2 text-sm font-semibold text-white no-underline transition hover:bg-brand-600" href="{{ url_for('login') }}">Iniciar sesion</a>
+                        <a class="app-session-link" href="{{ url_for('login') }}">Login</a>
                     {% endif %}
                 </div>
             </div>

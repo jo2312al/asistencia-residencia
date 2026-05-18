@@ -4,7 +4,8 @@
 <div class="grid min-h-[calc(100vh-7rem)] place-items-center">
     <div class="w-full max-w-md">
         <div class="mb-6 text-center">
-            <img class="mx-auto mb-4 h-14 w-14 rounded-2xl object-contain shadow-soft" src="{{ url_for('static', filename='img/asistec.webp') }}" alt="AsisTec">
+            <img class="mx-auto mb-4 h-14 w-14 rounded-2xl object-contain shadow-soft" src="{{ url_for('static', filename='img/asistec.webp') }}" alt="AsisTec" onerror="this.classList.add('d-none'); this.nextElementSibling.classList.remove('d-none');">
+            <div class="app-login-fallback d-none mx-auto mb-4">AsisTec</div>
             <h1 class="!mb-2 !text-center text-3xl font-bold text-slate-950">AsisTec</h1>
             <p class="text-sm font-medium text-slate-500">Gestiona eventos, credenciales y asistencia desde un solo lugar.</p>
         </div>
