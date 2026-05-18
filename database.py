@@ -29,7 +29,8 @@ class DatabaseManager:
         c.execute('''CREATE TABLE IF NOT EXISTS projects (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(100) UNIQUE NOT NULL,
-            description TEXT)''')
+            description TEXT,
+            event_id INT NULL)''')
         c.execute('''CREATE TABLE IF NOT EXISTS events (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(150) NOT NULL,
@@ -93,9 +94,11 @@ class DatabaseManager:
             legacy_attendance_id INT,
             event_type VARCHAR(50) NOT NULL DEFAULT 'entrada',
             timestamp DATETIME NOT NULL,
+            event_id INT NULL,
             FOREIGN KEY (participant_id) REFERENCES participants(id),
             FOREIGN KEY (credential_id) REFERENCES credentials(id),
-            FOREIGN KEY (legacy_attendance_id) REFERENCES attendance(id))''')
+            FOREIGN KEY (legacy_attendance_id) REFERENCES attendance(id),
+            FOREIGN KEY (event_id) REFERENCES events(id))''')
         c.execute("""
             SELECT COUNT(*)
             FROM information_schema.COLUMNS
@@ -114,6 +117,7 @@ class DatabaseManager:
         self._ensure_column(c, 'events', 'event_type', "VARCHAR(50) NOT NULL DEFAULT 'general'")
         self._ensure_column(c, 'events', 'duplicate_policy', "VARCHAR(50) NOT NULL DEFAULT 'once_per_day'")
         self._ensure_column(c, 'events', 'created_at', 'DATETIME NULL')
+        self._ensure_column(c, 'projects', 'event_id', 'INT NULL')
         self._ensure_column(c, 'participants', 'legacy_student_id', 'VARCHAR(36)')
         self._ensure_column(c, 'project_fields', 'field_type', "VARCHAR(50) NOT NULL DEFAULT 'text'")
         self._ensure_column(c, 'project_fields', 'display_order', 'INT NOT NULL DEFAULT 0')
@@ -126,6 +130,7 @@ class DatabaseManager:
         self._ensure_column(c, 'credentials', 'updated_at', 'DATETIME NULL')
         self._ensure_column(c, 'attendance_events', 'credential_id', 'VARCHAR(36)')
         self._ensure_column(c, 'attendance_events', 'legacy_attendance_id', 'INT')
+        self._ensure_column(c, 'attendance_events', 'event_id', 'INT NULL')
         conn.commit()
         conn.close()
 
@@ -329,14 +334,14 @@ class DatabaseManager:
         conn.close()
         return credential
 
-    def record_attendance_event(self, participant_id, credential_id, legacy_attendance_id, event_type, timestamp):
+    def record_attendance_event(self, participant_id, credential_id, legacy_attendance_id, event_type, timestamp, event_id=None):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
         c.execute(
             """INSERT INTO attendance_events
-               (participant_id, credential_id, legacy_attendance_id, event_type, timestamp)
-               VALUES (%s, %s, %s, %s, %s)""",
-            (participant_id, credential_id, legacy_attendance_id, event_type or 'entrada', timestamp)
+               (participant_id, credential_id, legacy_attendance_id, event_type, timestamp, event_id)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            (participant_id, credential_id, legacy_attendance_id, event_type or 'entrada', timestamp, event_id or None)
         )
         conn.commit()
         conn.close()
@@ -344,17 +349,21 @@ class DatabaseManager:
     def get_all_projects(self):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
-        c.execute("SELECT id, name, description FROM projects")
+        c.execute(
+            """SELECT p.id, p.name, p.description, e.name
+               FROM projects p
+               LEFT JOIN events e ON p.event_id = e.id"""
+        )
         projects = c.fetchall()
         conn.close()
         return projects
 
-    def add_project(self, name, description=None):
+    def add_project(self, name, description=None, event_id=None):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
         c.execute(
-            "INSERT INTO projects (name, description) VALUES (%s, %s)",
-            (name, description)
+            "INSERT INTO projects (name, description, event_id) VALUES (%s, %s, %s)",
+            (name, description, event_id or None)
         )
         conn.commit()
         project_id = c.lastrowid
@@ -368,6 +377,19 @@ class DatabaseManager:
             """SELECT id, name, description, start_datetime, end_datetime, location,
                       status, event_type, duplicate_policy
                FROM events
+               ORDER BY COALESCE(start_datetime, created_at) DESC, id DESC"""
+        )
+        events = c.fetchall()
+        conn.close()
+        return events
+
+    def get_active_events(self):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """SELECT id, name, event_type, location
+               FROM events
+               WHERE status = 'active'
                ORDER BY COALESCE(start_datetime, created_at) DESC, id DESC"""
         )
         events = c.fetchall()

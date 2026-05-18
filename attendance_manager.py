@@ -43,13 +43,13 @@ class AttendanceManager:
         conn.close()
         return "Asistencia registrada exitosamente"
 
-    def register_attendance_by_qr_data(self, qr_data):
+    def register_attendance_by_qr_data(self, qr_data, event_id=None):
         try:
             credential = self.db_manager.get_credential_by_token(qr_data)
         except Exception:
             credential = None
         if not credential:
-            return self.register_attendance_by_matricula(qr_data)
+            return self.register_attendance_by_matricula(qr_data, event_id)
 
         if credential['credential_status'] != 'active' or credential['participant_status'] != 'active':
             return "Credencial inactiva"
@@ -75,7 +75,8 @@ class AttendanceManager:
                 credential['credential_id'],
                 attendance_id,
                 'entrada',
-                now_mx
+                now_mx,
+                event_id
             )
             return "Asistencia registrada exitosamente"
         except Exception as e:
@@ -83,12 +84,15 @@ class AttendanceManager:
                 conn.close()
             return f"Error al registrar asistencia: {str(e)}"
 
-    def register_attendance_by_matricula(self, matricula):
+    def register_attendance_by_matricula(self, matricula, event_id=None):
         try:
             conn = mysql.connector.connect(**self.db_manager.db_config)
             cursor = conn.cursor(dictionary=True)
 
-            cursor.execute("SELECT id FROM students WHERE matricula = %s", (matricula,))
+            cursor.execute(
+                "SELECT id, first_name, last_name_p, last_name_m, matricula, carrera, project_id FROM students WHERE matricula = %s",
+                (matricula,)
+            )
             student = cursor.fetchone()
             if not student:
                 conn.close()
@@ -103,6 +107,29 @@ class AttendanceManager:
 
             conn.commit()
             conn.close()
+            if event_id:
+                try:
+                    student_tuple = (
+                        student['id'],
+                        student['first_name'],
+                        student['last_name_p'],
+                        student['last_name_m'],
+                        student['matricula'],
+                        student['carrera'],
+                        student['project_id'],
+                    )
+                    credential = self.db_manager.ensure_student_participant_credential(student_tuple)
+                    db_credential = self.db_manager.get_credential_by_token(credential['token'])
+                    self.db_manager.record_attendance_event(
+                        db_credential['participant_id'] if db_credential else None,
+                        db_credential['credential_id'] if db_credential else None,
+                        attendance_id,
+                        'entrada',
+                        now_mx,
+                        event_id
+                    )
+                except Exception:
+                    pass
             return "Asistencia registrada exitosamente"
         except Exception as e:
             if 'conn' in locals() and conn.is_connected():

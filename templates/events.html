@@ -82,6 +82,15 @@
                         <label for="project_description" class="form-label">Descripcion opcional</label>
                         <textarea class="form-control" id="project_description" name="description" rows="2"></textarea>
                     </div>
+                    <div class="mb-3">
+                        <label for="project_event_id" class="form-label">Evento asociado</label>
+                        <select class="form-select" id="project_event_id" name="event_id">
+                            <option value="">Sin evento</option>
+                            {% for event in events %}
+                            <option value="{{ event[0] }}">{{ event[1] }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                     <button type="submit" class="btn btn-outline-primary">Agregar proyecto</button>
                 </form>
             </div>
@@ -140,6 +149,7 @@
                             <tr>
                                 <th>ID</th>
                                 <th>Nombre</th>
+                                <th>Evento</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -147,10 +157,11 @@
                             <tr>
                                 <td>{{ project[0] }}</td>
                                 <td>{{ project[1] }}</td>
+                                <td>{{ project[3] or 'Sin evento' }}</td>
                             </tr>
                             {% else %}
                             <tr>
-                                <td colspan="2" class="text-center text-muted">No hay proyectos.</td>
+                                <td colspan="3" class="text-center text-muted">No hay proyectos.</td>
                             </tr>
                             {% endfor %}
                         </tbody>

@@ -505,13 +505,14 @@ def create_event():
 def create_project():
     name = (request.form.get("name") or "").strip()
     description = (request.form.get("description") or "").strip() or None
+    event_id = request.form.get("event_id", type=int)
 
     if not name:
         flash("Nombre del proyecto requerido", "danger")
         return redirect(url_for("events"))
 
     try:
-        db_manager.add_project(name, description)
+        db_manager.add_project(name, description, event_id)
         flash("Proyecto agregado correctamente", "success")
     except mysql.connector.Error as e:
         if e.errno == 1062:
@@ -598,7 +599,7 @@ def delete_project_field(field_id):
 @login_required
 @role_required("admin", "staff")
 def scan():
-    return render_template("scan.html")
+    return render_template("scan.html", events=db_manager.get_active_events())
 
 
 @app.route("/reports")
@@ -876,7 +877,12 @@ def register_attendance():
             return jsonify({"success": False, "error": "Datos de QR no proporcionados"}), 400
 
         qr_data = data["qr_data"]
-        result = attendance_manager.register_attendance_by_qr_data(qr_data)
+        event_id = data.get("event_id")
+        try:
+            event_id = int(event_id) if event_id else None
+        except (TypeError, ValueError):
+            event_id = None
+        result = attendance_manager.register_attendance_by_qr_data(qr_data, event_id)
         if result == "Asistencia registrada exitosamente":
             return jsonify({"success": True, "message": result})
         if result == "Este alumno ya fue tomado asistencia":

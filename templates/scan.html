@@ -8,6 +8,15 @@
             <h2 class="h5 mb-0">Escáner de Asistencia</h2>
         </div>
         <div class="card-body text-center">
+            <div class="mb-3 text-start">
+                <label for="event_id" class="form-label">Evento</label>
+                <select class="form-select" id="event_id" name="event_id">
+                    <option value="">Registro general</option>
+                    {% for event in events %}
+                    <option value="{{ event[0] }}">{{ event[1] }}{% if event[2] %} - {{ event[2] }}{% endif %}{% if event[3] %} ({{ event[3] }}){% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
             <video id="qr-video" class="img-fluid" autoplay playsinline></video>
             <canvas id="qr-canvas" style="display: none;"></canvas>
             <div id="qr-result" class="mt-3"></div>

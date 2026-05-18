@@ -63,10 +63,12 @@ function scanQRCode(video, canvas, resultContainer) {
 
 function registerAttendance(qrData) {
     console.log("Registrando asistencia para QR:", qrData);
+    const eventSelector = document.getElementById('event_id');
+    const eventId = eventSelector ? eventSelector.value : '';
     fetch('/register_attendance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qr_data: qrData })
+        body: JSON.stringify({ qr_data: qrData, event_id: eventId })
     })
     .then(response => {
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
