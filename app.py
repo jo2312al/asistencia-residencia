@@ -239,8 +239,8 @@ def build_rectangular_credential_card(student, styles, card_width, card_height):
     return card
 
 
-def get_credential_students(qr_tool=None):
-    students = db_manager.get_all_students()
+def get_credential_students(qr_tool=None, event_id=None):
+    students = db_manager.get_all_students_filtered(event_id_filter=event_id) if event_id else db_manager.get_all_students()
     local_qr_manager = qr_tool or QRManager()
     projects = {project[0]: project[1] for project in db_manager.get_all_projects()}
     student_data = []
@@ -477,13 +477,15 @@ def create_event():
     status = request.form.get("status") or "active"
     event_type = request.form.get("event_type") or "general"
     duplicate_policy = request.form.get("duplicate_policy") or "once_per_day"
+    selected_fields = request.form.getlist("event_fields")
+    custom_field = (request.form.get("custom_field") or "").strip()
 
     if not name:
         flash("Nombre del evento requerido", "danger")
         return redirect(url_for("events"))
 
     try:
-        db_manager.add_event(
+        event_id = db_manager.add_event(
             name,
             description,
             start_datetime,
@@ -493,6 +495,22 @@ def create_event():
             event_type,
             duplicate_policy,
         )
+        field_options = {
+            "email": ("Correo", "email", True),
+            "telefono": ("Telefono", "tel", False),
+            "matricula": ("Matricula", "text", False),
+            "carrera": ("Carrera", "text", False),
+            "equipo": ("Equipo", "text", False),
+            "categoria": ("Categoria", "text", False),
+            "institucion": ("Institucion", "text", False),
+            "rfc": ("RFC", "text", False),
+        }
+        for order, field_key in enumerate(selected_fields, start=1):
+            if field_key in field_options:
+                field_name, field_type, is_required = field_options[field_key]
+                db_manager.add_event_field(event_id, field_name, field_type, is_required, order)
+        if custom_field:
+            db_manager.add_event_field(event_id, custom_field, "text", False, len(selected_fields) + 1)
         flash("Evento creado correctamente", "success")
     except Exception as e:
         flash(str(e), "danger")
@@ -528,8 +546,8 @@ def create_project():
 @login_required
 @role_required("admin")
 def register():
-    projects = db_manager.get_all_projects()
-    return render_template("register.html", projects=projects)
+    events = db_manager.get_active_events()
+    return render_template("register.html", events=events)
 
 
 @app.route("/settings")
@@ -608,6 +626,33 @@ def project_fields_api(project_id):
     })
 
 
+@app.route("/event_fields/<int:event_id>")
+@login_required
+@role_required("admin", api=True)
+def event_fields_api(event_id):
+    if not db_manager.get_event(event_id):
+        return jsonify({"success": False, "error": "Evento no encontrado"}), 404
+
+    return jsonify({
+        "success": True,
+        "fields": db_manager.get_event_fields_as_dicts(event_id),
+    })
+
+
+@app.route("/event_projects/<int:event_id>")
+@login_required
+@role_required("admin", "staff", api=True)
+def event_projects_api(event_id):
+    if not db_manager.get_event(event_id):
+        return jsonify({"success": False, "error": "Evento no encontrado"}), 404
+
+    projects = db_manager.get_projects_by_event(event_id)
+    return jsonify({
+        "success": True,
+        "projects": [{"id": p[0], "name": p[1]} for p in projects],
+    })
+
+
 @app.route("/scan")
 @login_required
 @role_required("admin", "staff")
@@ -631,12 +676,19 @@ def data():
     matricula_search = request.args.get("matricula", "").strip()
     apellido_p_search = request.args.get("apellido_p", "").strip()
     project_id_filter = request.args.get("project_id", "")
+    event_id_filter = request.args.get("event_id", "")
 
     page = request.args.get("page", 1, type=int)
     per_page = 10
 
     projects = db_manager.get_all_projects()
-    all_students = db_manager.get_all_students_filtered(matricula_search, apellido_p_search, project_id_filter)
+    events = db_manager.get_all_events()
+    all_students = db_manager.get_all_students_filtered(
+        matricula_search,
+        apellido_p_search,
+        project_id_filter,
+        event_id_filter,
+    )
 
     total_students = len(all_students)
     total_pages = (total_students + per_page - 1) // per_page
@@ -666,6 +718,7 @@ def data():
             "matricula": student[4],
             "carrera": student[5],
             "project_id": student[6],
+            "event_id": student[7] if len(student) > 7 else None,
             "project_name": project_name,
             "credential_token": credential_token or "Legacy",
             "is_legacy_qr": is_legacy_qr,
@@ -678,11 +731,13 @@ def data():
         "data.html",
         students=students_with_qr,
         projects=projects,
+        events=events,
         page=page,
         total_pages=total_pages,
         matricula_search=matricula_search,
         apellido_p_search=apellido_p_search,
         project_id_filter=project_id_filter,
+        event_id_filter=event_id_filter,
     )
 
 
@@ -691,6 +746,7 @@ def data():
 @role_required("admin", "staff")
 def download_all_qrs_pdf():
     local_qr_manager = QRManager()
+    event_id = request.args.get("event_id") or None
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_dir = "static/reports"
@@ -709,7 +765,7 @@ def download_all_qrs_pdf():
     elements = []
     styles = getSampleStyleSheet()
 
-    student_data = get_credential_students(local_qr_manager)
+    student_data = get_credential_students(local_qr_manager, event_id)
 
     page_width = letter[0]
     page_height = letter[1]
@@ -756,6 +812,7 @@ def download_all_qrs_pdf():
 @role_required("admin", "staff")
 def download_all_credentials_rect_pdf():
     local_qr_manager = QRManager()
+    event_id = request.args.get("event_id") or None
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_dir = "static/reports"
@@ -773,7 +830,7 @@ def download_all_credentials_rect_pdf():
     )
     elements = []
     styles = getSampleStyleSheet()
-    student_data = get_credential_students(local_qr_manager)
+    student_data = get_credential_students(local_qr_manager, event_id)
 
     page_width = letter[0]
     page_height = letter[1]
@@ -816,7 +873,8 @@ def download_all_credentials_rect_pdf():
 @login_required
 @role_required("admin", "staff")
 def download_all_qrs():
-    students = db_manager.get_all_students()
+    event_id = request.args.get("event_id") or None
+    students = db_manager.get_all_students_filtered(event_id_filter=event_id) if event_id else db_manager.get_all_students()
     local_qr_manager = QRManager()
     memory_file = BytesIO()
 
@@ -850,20 +908,23 @@ def generate_qr():
         last_name_m = data["last_name_m"]
         matricula = data["matricula"]
         carrera = data["carrera"]
+        event_id = data.get("event_id") or None
         project_id = data.get("project_id") or None
 
+        if not event_id:
+            return jsonify({"success": False, "error": "Selecciona un evento"}), 400
+
+        if event_id and not db_manager.get_event(event_id):
+            return jsonify({"success": False, "error": "Evento no encontrado"}), 400
+
         if project_id:
-            conn = mysql.connector.connect(**db_config)
-            c = conn.cursor()
-            c.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
-            if not c.fetchone():
-                conn.close()
+            valid_project_ids = {str(project[0]) for project in db_manager.get_projects_by_event(event_id)}
+            if str(project_id) not in valid_project_ids:
                 return jsonify({"success": False, "error": f"Proyecto con ID {project_id} no existe"}), 400
-            conn.close()
 
         dynamic_values = {}
-        if project_id:
-            for field in db_manager.get_project_fields(project_id):
+        if event_id:
+            for field in db_manager.get_event_fields(event_id):
                 field_id = field[0]
                 field_name = field[2]
                 is_required = bool(field[4])
@@ -873,11 +934,11 @@ def generate_qr():
                 if value:
                     dynamic_values[field_id] = value
 
-        db_manager.add_student(student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id)
+        db_manager.add_student(student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id, event_id)
         student = db_manager.get_student_by_matricula(matricula)
         credential = db_manager.ensure_student_participant_credential(student)
         participant_id = db_manager.get_participant_id_by_student_id(student[0])
-        db_manager.save_participant_field_values(participant_id, dynamic_values)
+        db_manager.save_participant_event_field_values(participant_id, dynamic_values)
         qr_path = ensure_credential_qr(credential)
         return jsonify({"success": True, "qr_path": qr_path, "credential_token": credential["token"]})
     except KeyError as e:
@@ -903,18 +964,19 @@ def upload_excel():
             return jsonify({"success": False, "error": "No se proporciono un archivo Excel"}), 400
 
         project_id = request.form.get("project_id") or None
+        event_id = request.form.get("event_id") or None
         if file.filename == "":
             return jsonify({"success": False, "error": "No se selecciono un archivo"}), 400
+        if not event_id:
+            return jsonify({"success": False, "error": "Selecciona un evento"}), 400
+        if not db_manager.get_event(event_id):
+            return jsonify({"success": False, "error": "Evento no encontrado"}), 400
         if project_id:
-            conn = mysql.connector.connect(**db_config)
-            c = conn.cursor()
-            c.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
-            if not c.fetchone():
-                conn.close()
-                return jsonify({"success": False, "error": "Proyecto no encontrado"}), 400
-            conn.close()
+            valid_project_ids = {str(project[0]) for project in db_manager.get_projects_by_event(event_id)}
+            if str(project_id) not in valid_project_ids:
+                return jsonify({"success": False, "error": "Proyecto no encontrado para este evento"}), 400
 
-        result = db_manager.upload_students_from_excel(file, project_id)
+        result = db_manager.upload_students_from_excel(file, project_id, event_id)
         return jsonify({"success": True, "message": result})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

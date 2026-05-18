@@ -29,6 +29,17 @@
                         {% endfor %}
                     </select>
                 </div>
+                <div class="col-md-3">
+                    <label for="event_filter" class="form-label">Filtrar por Evento</label>
+                    <select class="form-control" id="event_filter" name="event_id">
+                        <option value="">Todos los eventos</option>
+                        {% for event in events %}
+                            <option value="{{ event[0] }}" {% if event_id_filter == event[0]|string %}selected{% endif %}>
+                                {{ event[1] }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
                 <div class="col-md-3 d-flex align-items-end">
                     <button type="submit" class="btn btn-primary me-2">Buscar</button>
                     <a href="{{ url_for('data') }}" class="btn btn-secondary">Limpiar</a>
@@ -38,13 +49,13 @@
 
         <!-- Botones de descarga -->
         <div class="mb-3">
-            <a href="{{ url_for('download_all_qrs') }}" class="btn btn-primary me-2">
+            <a href="{{ url_for('download_all_qrs', event_id=event_id_filter) }}" class="btn btn-primary me-2">
                 <i class="bi bi-download"></i> Descargar Todos los Códigos QR (ZIP)
             </a>
-            <a href="{{ url_for('download_all_qrs_pdf') }}" class="btn btn-primary">
+            <a href="{{ url_for('download_all_qrs_pdf', event_id=event_id_filter) }}" class="btn btn-primary">
                 <i class="bi bi-file-earmark-pdf"></i> Credenciales (PDF)
             </a>
-            <a href="{{ url_for('download_all_credentials_rect_pdf') }}" class="btn btn-outline-primary ms-2">
+            <a href="{{ url_for('download_all_credentials_rect_pdf', event_id=event_id_filter) }}" class="btn btn-outline-primary ms-2">
                 <i class="bi bi-file-earmark-pdf"></i> Credenciales Rectangulares
             </a>
         </div>
@@ -112,7 +123,7 @@
             <ul class="pagination justify-content-center">
                 <!-- Botón "Anterior" -->
                 <li class="page-item {% if page == 1 %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('data', page=page-1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter) }}" aria-label="Previous">
+                    <a class="page-link" href="{{ url_for('data', page=page-1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter) }}" aria-label="Previous">
                         <span aria-hidden="true">«</span>
                     </a>
                 </li>
@@ -120,13 +131,13 @@
                 <!-- Números de página -->
                 {% for p in range(1, total_pages + 1) %}
                     <li class="page-item {% if p == page %}active{% endif %}">
-                        <a class="page-link" href="{{ url_for('data', page=p, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter) }}">{{ p }}</a>
+                        <a class="page-link" href="{{ url_for('data', page=p, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter) }}">{{ p }}</a>
                     </li>
                 {% endfor %}
 
                 <!-- Botón "Siguiente" -->
                 <li class="page-item {% if page == total_pages %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('data', page=page+1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter) }}" aria-label="Next">
+                    <a class="page-link" href="{{ url_for('data', page=page+1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter) }}" aria-label="Next">
                         <span aria-hidden="true">»</span>
                     </a>
                 </li>

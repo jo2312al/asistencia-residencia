@@ -9,6 +9,15 @@
     <div class="card-body">
         <form id="register-form" method="POST">
             <div class="mb-3">
+                <label for="event_id" class="form-label">Evento</label>
+                <select class="form-select" id="event_id" name="event_id" required>
+                    <option value="">Seleccione un evento</option>
+                    {% for event in events %}
+                        <option value="{{ event[0] }}">{{ event[1] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
                 <label for="first_name" class="form-label">Nombre</label>
                 <input type="text" class="form-control" id="first_name" name="first_name" required>
             </div>
@@ -31,13 +40,10 @@
             <div class="mb-3">
                 <label for="project_id" class="form-label">Proyecto</label>
                 <select class="form-select" id="project_id" name="project_id">
-                    <option value="">Seleccione un proyecto</option>
-                    {% for project in projects %}
-                        <option value="{{ project[0] }}">{{ project[1] }}</option>
-                    {% endfor %}
+                    <option value="">Seleccione primero un evento</option>
                 </select>
             </div>
-            <div id="project-fields-container" class="border-top pt-3 d-none"></div>
+            <div id="event-fields-container" class="border-top pt-3 d-none"></div>
             <button type="submit" class="btn tecn-blue text-white">Generar QR</button>
         </form>
         <div id="qr-result" class="mt-3"></div>
@@ -52,15 +58,21 @@
             <div class="mb-3">
                 <label for="excel_file" class="form-label">Seleccionar archivo Excel</label>
                 <input type="file" class="form-control" id="excel_file" name="excel_file" accept=".xlsx,.xls" required>
-                <div class="form-text">Columnas base: first_name, last_name_p, last_name_m, matricula, carrera. Si el proyecto tiene campos obligatorios, agregalos como columnas con el mismo nombre.</div>
+                <div class="form-text">Columnas base: first_name, last_name_p, last_name_m, matricula, carrera. Si el evento tiene campos obligatorios, agregalos como columnas con el mismo nombre.</div>
+            </div>
+            <div class="mb-3">
+                <label for="event_id_excel" class="form-label">Evento</label>
+                <select class="form-select" id="event_id_excel" name="event_id" required>
+                    <option value="">Seleccione un evento</option>
+                    {% for event in events %}
+                        <option value="{{ event[0] }}">{{ event[1] }}</option>
+                    {% endfor %}
+                </select>
             </div>
             <div class="mb-3">
                 <label for="project_id_excel" class="form-label">Proyecto</label>
                 <select class="form-select" id="project_id_excel" name="project_id">
-                    <option value="">Seleccione un proyecto</option>
-                    {% for project in projects %}
-                        <option value="{{ project[0] }}">{{ project[1] }}</option>
-                    {% endfor %}
+                    <option value="">Seleccione primero un evento</option>
                 </select>
             </div>
             <button type="submit" class="btn tecn-blue text-white">Cargar Excel</button>

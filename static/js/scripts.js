@@ -116,22 +116,22 @@ function normalizeFieldType(fieldType) {
     return allowedTypes.includes(fieldType) ? fieldType : 'text';
 }
 
-async function loadProjectFields(projectId) {
-    const container = document.getElementById('project-fields-container');
+async function loadEventFields(eventId) {
+    const container = document.getElementById('event-fields-container');
     if (!container) return;
 
     container.innerHTML = '';
     container.classList.add('d-none');
-    if (!projectId) return;
+    if (!eventId) return;
 
     try {
-        const response = await fetch(`/project_fields/${projectId}`);
+        const response = await fetch(`/event_fields/${eventId}`);
         const result = await response.json();
         if (!result.success || !result.fields.length) return;
 
         const title = document.createElement('h3');
         title.className = 'h6 mb-3';
-        title.textContent = 'Campos adicionales del proyecto';
+        title.textContent = 'Campos adicionales del evento';
         container.appendChild(title);
 
         result.fields.forEach((field) => {
@@ -156,18 +156,70 @@ async function loadProjectFields(projectId) {
         });
         container.classList.remove('d-none');
     } catch (error) {
-        console.error("Error cargando campos del proyecto:", error);
+        console.error("Error cargando campos del evento:", error);
+    }
+}
+
+async function loadEventProjects(eventId, selectId) {
+    const projectSelect = document.getElementById(selectId);
+    if (!projectSelect) return;
+
+    projectSelect.innerHTML = '<option value="">Sin proyecto</option>';
+    if (!eventId) {
+        projectSelect.innerHTML = '<option value="">Seleccione primero un evento</option>';
+        return;
+    }
+
+    try {
+        const response = await fetch(`/event_projects/${eventId}`);
+        const result = await response.json();
+        if (!result.success) return;
+        if (!result.projects.length) {
+            projectSelect.innerHTML = '<option value="">Este evento no tiene proyectos</option>';
+            return;
+        }
+        projectSelect.innerHTML = '<option value="">Sin proyecto</option>';
+        result.projects.forEach((project) => {
+            const option = document.createElement('option');
+            option.value = project.id;
+            option.textContent = project.name;
+            projectSelect.appendChild(option);
+        });
+    } catch (error) {
+        console.error("Error cargando proyectos del evento:", error);
+    }
+}
+
+function initializeEventRegistrationLoader() {
+    const eventSelect = document.getElementById('event_id');
+    const excelEventSelect = document.getElementById('event_id_excel');
+
+    if (eventSelect) {
+        eventSelect.addEventListener('change', function() {
+            loadEventFields(this.value);
+            loadEventProjects(this.value, 'project_id');
+        });
+        loadEventFields(eventSelect.value);
+        loadEventProjects(eventSelect.value, 'project_id');
+    }
+
+    if (excelEventSelect) {
+        excelEventSelect.addEventListener('change', function() {
+            loadEventProjects(this.value, 'project_id_excel');
+        });
+        loadEventProjects(excelEventSelect.value, 'project_id_excel');
     }
 }
 
 function initializeProjectFieldsLoader() {
+    initializeEventRegistrationLoader();
     const projectSelect = document.getElementById('project_id');
-    if (!projectSelect) return;
+    if (!projectSelect || document.getElementById('event_id')) return;
 
     projectSelect.addEventListener('change', function() {
-        loadProjectFields(this.value);
+        loadEventFields(this.value);
     });
-    loadProjectFields(projectSelect.value);
+    loadEventFields(projectSelect.value);
 }
 
 // Formulario de registro (para /register)

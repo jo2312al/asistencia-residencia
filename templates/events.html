@@ -60,6 +60,23 @@
                             <label for="description" class="form-label">Descripcion</label>
                             <textarea class="form-control" id="description" name="description" rows="2"></textarea>
                         </div>
+                        <div class="col-12">
+                            <label class="form-label">Datos que solicitara el evento</label>
+                            <div class="row g-2">
+                                <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" id="field_email" name="event_fields" value="email" checked><label class="form-check-label" for="field_email">Correo</label></div></div>
+                                <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" id="field_telefono" name="event_fields" value="telefono"><label class="form-check-label" for="field_telefono">Telefono</label></div></div>
+                                <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" id="field_matricula" name="event_fields" value="matricula"><label class="form-check-label" for="field_matricula">Matricula</label></div></div>
+                                <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" id="field_carrera" name="event_fields" value="carrera"><label class="form-check-label" for="field_carrera">Carrera</label></div></div>
+                                <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" id="field_equipo" name="event_fields" value="equipo"><label class="form-check-label" for="field_equipo">Equipo</label></div></div>
+                                <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" id="field_categoria" name="event_fields" value="categoria"><label class="form-check-label" for="field_categoria">Categoria</label></div></div>
+                                <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" id="field_institucion" name="event_fields" value="institucion"><label class="form-check-label" for="field_institucion">Institucion</label></div></div>
+                                <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" id="field_rfc" name="event_fields" value="rfc"><label class="form-check-label" for="field_rfc">RFC</label></div></div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="custom_field" class="form-label">Otro dato opcional</label>
+                            <input type="text" class="form-control" id="custom_field" name="custom_field" placeholder="Ej. Asesor, Numero de equipo">
+                        </div>
                     </div>
                     <button type="submit" class="btn btn-primary mt-3">Crear evento</button>
                 </form>

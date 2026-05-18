@@ -49,7 +49,9 @@ class DatabaseManager:
             last_name_m VARCHAR(50) NOT NULL,
             matricula VARCHAR(20) UNIQUE NOT NULL,
             carrera VARCHAR(100) NOT NULL,
+            event_id INT NULL,
             project_id INT,
+            FOREIGN KEY (event_id) REFERENCES events(id),
             FOREIGN KEY (project_id) REFERENCES projects(id))''')
         c.execute('''CREATE TABLE IF NOT EXISTS attendance (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -65,16 +67,27 @@ class DatabaseManager:
             display_order INT NOT NULL DEFAULT 0,
             created_at DATETIME NULL,
             FOREIGN KEY (project_id) REFERENCES projects(id))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS event_fields (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            event_id INT NOT NULL,
+            name VARCHAR(100) NOT NULL,
+            field_type VARCHAR(50) NOT NULL DEFAULT 'text',
+            is_required BOOLEAN NOT NULL DEFAULT FALSE,
+            display_order INT NOT NULL DEFAULT 0,
+            created_at DATETIME NULL,
+            FOREIGN KEY (event_id) REFERENCES events(id))''')
         c.execute('''CREATE TABLE IF NOT EXISTS participants (
             id VARCHAR(36) PRIMARY KEY,
             full_name VARCHAR(150) NOT NULL,
             email VARCHAR(255),
             phone VARCHAR(50),
+            event_id INT NULL,
             project_id INT,
             status VARCHAR(30) NOT NULL DEFAULT 'active',
             legacy_student_id VARCHAR(36) UNIQUE,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
+            FOREIGN KEY (event_id) REFERENCES events(id),
             FOREIGN KEY (project_id) REFERENCES projects(id),
             FOREIGN KEY (legacy_student_id) REFERENCES students(id))''')
         c.execute('''CREATE TABLE IF NOT EXISTS participant_field_values (
@@ -86,6 +99,15 @@ class DatabaseManager:
             updated_at DATETIME NULL,
             FOREIGN KEY (participant_id) REFERENCES participants(id),
             FOREIGN KEY (field_id) REFERENCES project_fields(id))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS participant_event_field_values (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            participant_id VARCHAR(36) NOT NULL,
+            field_id INT NOT NULL,
+            value TEXT,
+            created_at DATETIME NULL,
+            updated_at DATETIME NULL,
+            FOREIGN KEY (participant_id) REFERENCES participants(id),
+            FOREIGN KEY (field_id) REFERENCES event_fields(id))''')
         c.execute('''CREATE TABLE IF NOT EXISTS credentials (
             id VARCHAR(36) PRIMARY KEY,
             participant_id VARCHAR(36) NOT NULL,
@@ -127,12 +149,16 @@ class DatabaseManager:
         self._ensure_column(c, 'events', 'duplicate_policy', "VARCHAR(50) NOT NULL DEFAULT 'once_per_day'")
         self._ensure_column(c, 'events', 'created_at', 'DATETIME NULL')
         self._ensure_column(c, 'projects', 'event_id', 'INT NULL')
+        self._ensure_column(c, 'students', 'event_id', 'INT NULL')
+        self._ensure_column(c, 'participants', 'event_id', 'INT NULL')
         self._ensure_column(c, 'participants', 'legacy_student_id', 'VARCHAR(36)')
         self._ensure_column(c, 'project_fields', 'field_type', "VARCHAR(50) NOT NULL DEFAULT 'text'")
         self._ensure_column(c, 'project_fields', 'display_order', 'INT NOT NULL DEFAULT 0')
         self._ensure_column(c, 'project_fields', 'created_at', 'DATETIME NULL')
         self._ensure_column(c, 'participant_field_values', 'created_at', 'DATETIME NULL')
         self._ensure_column(c, 'participant_field_values', 'updated_at', 'DATETIME NULL')
+        self._ensure_column(c, 'participant_event_field_values', 'created_at', 'DATETIME NULL')
+        self._ensure_column(c, 'participant_event_field_values', 'updated_at', 'DATETIME NULL')
         self._ensure_column(c, 'participants', 'created_at', 'DATETIME NULL')
         self._ensure_column(c, 'participants', 'updated_at', 'DATETIME NULL')
         self._ensure_column(c, 'credentials', 'qr_path', 'VARCHAR(255)')
@@ -229,15 +255,15 @@ class DatabaseManager:
         conn.close()
         return not exists
 
-    def add_student(self, student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id):
+    def add_student(self, student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id, event_id=None):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
-        c.execute('''INSERT INTO students (id, first_name, last_name_p, last_name_m, matricula, carrera, project_id)
-                     VALUES (%s, %s, %s, %s, %s, %s, %s)''',
-                  (student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id))
+        c.execute('''INSERT INTO students (id, first_name, last_name_p, last_name_m, matricula, carrera, event_id, project_id)
+                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)''',
+                  (student_id, first_name, last_name_p, last_name_m, matricula, carrera, event_id, project_id))
         try:
             participant_id = self._ensure_participant_for_student(
-                c, student_id, first_name, last_name_p, last_name_m, project_id
+                c, student_id, first_name, last_name_p, last_name_m, project_id, event_id
             )
             self._ensure_credential_for_participant(c, participant_id)
         except Exception:
@@ -248,7 +274,7 @@ class DatabaseManager:
     def _new_credential_token(self):
         return f"CRD-{secrets.token_hex(4)}"
 
-    def _ensure_participant_for_student(self, cursor, student_id, first_name, last_name_p, last_name_m, project_id):
+    def _ensure_participant_for_student(self, cursor, student_id, first_name, last_name_p, last_name_m, project_id, event_id=None):
         cursor.execute("SELECT id FROM participants WHERE legacy_student_id = %s", (student_id,))
         existing = cursor.fetchone()
         full_name = f"{first_name} {last_name_p} {last_name_m}".strip()
@@ -257,18 +283,18 @@ class DatabaseManager:
             participant_id = existing[0]
             cursor.execute(
                 """UPDATE participants
-                   SET full_name = %s, project_id = %s, updated_at = %s
+                   SET full_name = %s, event_id = %s, project_id = %s, updated_at = %s
                    WHERE id = %s""",
-                (full_name, project_id, now, participant_id)
+                (full_name, event_id, project_id, now, participant_id)
             )
             return participant_id
 
         participant_id = str(uuid.uuid4())
         cursor.execute(
             """INSERT INTO participants
-               (id, full_name, project_id, status, legacy_student_id, created_at, updated_at)
-               VALUES (%s, %s, %s, 'active', %s, %s, %s)""",
-            (participant_id, full_name, project_id, student_id, now, now)
+               (id, full_name, event_id, project_id, status, legacy_student_id, created_at, updated_at)
+               VALUES (%s, %s, %s, %s, 'active', %s, %s, %s)""",
+            (participant_id, full_name, event_id, project_id, student_id, now, now)
         )
         return participant_id
 
@@ -312,7 +338,7 @@ class DatabaseManager:
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
         participant_id = self._ensure_participant_for_student(
-            c, student[0], student[1], student[2], student[3], student[6]
+            c, student[0], student[1], student[2], student[3], student[6], student[7] if len(student) > 7 else None
         )
         credential = self._ensure_credential_for_participant(c, participant_id)
         conn.commit()
@@ -380,6 +406,17 @@ class DatabaseManager:
         values = {}
         for student_id, name, value in c.fetchall():
             values.setdefault(student_id, []).append({"name": name, "value": value})
+        c.execute(
+            f"""SELECT p.legacy_student_id, ef.name, pefv.value
+                FROM participant_event_field_values pefv
+                JOIN event_fields ef ON pefv.field_id = ef.id
+                JOIN participants p ON pefv.participant_id = p.id
+                WHERE p.legacy_student_id IN ({placeholders})
+                ORDER BY ef.display_order, ef.id""",
+            tuple(student_ids)
+        )
+        for student_id, name, value in c.fetchall():
+            values.setdefault(student_id, []).append({"name": name, "value": value})
         conn.close()
         return values
 
@@ -433,6 +470,20 @@ class DatabaseManager:
         conn.close()
         return projects
 
+    def get_projects_by_event(self, event_id):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """SELECT id, name, description, event_id
+               FROM projects
+               WHERE event_id = %s
+               ORDER BY name""",
+            (event_id,)
+        )
+        projects = c.fetchall()
+        conn.close()
+        return projects
+
     def get_project(self, project_id):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
@@ -471,6 +522,18 @@ class DatabaseManager:
         events = c.fetchall()
         conn.close()
         return events
+
+    def get_event(self, event_id):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """SELECT id, name, description, start_datetime, end_datetime, location, status, event_type, duplicate_policy
+               FROM events WHERE id = %s""",
+            (event_id,)
+        )
+        event = c.fetchone()
+        conn.close()
+        return event
 
     def get_active_events(self):
         conn = mysql.connector.connect(**self.db_config)
@@ -540,6 +603,82 @@ class DatabaseManager:
             for field in self.get_project_fields(project_id)
         ]
 
+    def get_event_fields(self, event_id):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """SELECT id, event_id, name, field_type, is_required, display_order
+               FROM event_fields
+               WHERE event_id = %s
+               ORDER BY display_order, id""",
+            (event_id,)
+        )
+        fields = c.fetchall()
+        conn.close()
+        return fields
+
+    def get_event_fields_as_dicts(self, event_id):
+        return [
+            {
+                "id": field[0],
+                "event_id": field[1],
+                "name": field[2],
+                "field_type": field[3],
+                "is_required": bool(field[4]),
+                "display_order": field[5],
+            }
+            for field in self.get_event_fields(event_id)
+        ]
+
+    def add_event_field(self, event_id, name, field_type='text', is_required=False, display_order=0):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute("SELECT id FROM events WHERE id = %s", (event_id,))
+        if not c.fetchone():
+            conn.close()
+            raise ValueError("Evento no encontrado")
+        c.execute(
+            """INSERT INTO event_fields
+               (event_id, name, field_type, is_required, display_order, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            (event_id, name, field_type or 'text', bool(is_required), display_order or 0, datetime.now())
+        )
+        conn.commit()
+        field_id = c.lastrowid
+        conn.close()
+        return field_id
+
+    def save_participant_event_field_values(self, participant_id, field_values):
+        if not participant_id or not field_values:
+            return
+
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        now = datetime.now()
+        for field_id, value in field_values.items():
+            c.execute(
+                """SELECT id FROM participant_event_field_values
+                   WHERE participant_id = %s AND field_id = %s""",
+                (participant_id, field_id)
+            )
+            existing = c.fetchone()
+            if existing:
+                c.execute(
+                    """UPDATE participant_event_field_values
+                       SET value = %s, updated_at = %s
+                       WHERE id = %s""",
+                    (value, now, existing[0])
+                )
+            else:
+                c.execute(
+                    """INSERT INTO participant_event_field_values
+                       (participant_id, field_id, value, created_at, updated_at)
+                       VALUES (%s, %s, %s, %s, %s)""",
+                    (participant_id, field_id, value, now, now)
+                )
+        conn.commit()
+        conn.close()
+
     def add_project_field(self, project_id, name, field_type='text', is_required=False, display_order=0):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
@@ -590,7 +729,7 @@ class DatabaseManager:
     def get_all_students(self):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
-        c.execute("SELECT id, first_name, last_name_p, last_name_m, matricula, carrera, project_id FROM students")
+        c.execute("SELECT id, first_name, last_name_p, last_name_m, matricula, carrera, project_id, event_id FROM students")
         students = c.fetchall()
         conn.close()
         return students
@@ -598,12 +737,12 @@ class DatabaseManager:
     def get_student_by_matricula(self, matricula):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
-        c.execute("SELECT id, first_name, last_name_p, last_name_m, matricula, carrera, project_id FROM students WHERE matricula = %s", (matricula,))
+        c.execute("SELECT id, first_name, last_name_p, last_name_m, matricula, carrera, project_id, event_id FROM students WHERE matricula = %s", (matricula,))
         student = c.fetchone()
         conn.close()
         return student
 
-    def upload_students_from_excel(self, file, project_id):
+    def upload_students_from_excel(self, file, project_id, event_id=None):
         df = pd.read_excel(file)
         required_columns = ['first_name', 'last_name_p', 'last_name_m', 'matricula', 'carrera']
         if not all(col in df.columns for col in required_columns):
@@ -614,6 +753,14 @@ class DatabaseManager:
         errors = []
         success_count = 0
         project_fields = []
+        event_fields = []
+
+        if event_id:
+            c.execute("SELECT id FROM events WHERE id = %s", (event_id,))
+            if not c.fetchone():
+                conn.close()
+                raise ValueError("Evento no encontrado")
+            event_fields = self.get_event_fields(event_id)
 
         if project_id:
             c.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
@@ -623,6 +770,7 @@ class DatabaseManager:
             project_fields = self.get_project_fields(project_id)
 
         required_dynamic_columns = [field[2] for field in project_fields if field[4]]
+        required_dynamic_columns += [field[2] for field in event_fields if field[4]]
         missing_dynamic_columns = [name for name in required_dynamic_columns if name not in df.columns]
         if missing_dynamic_columns:
             conn.close()
@@ -647,20 +795,42 @@ class DatabaseManager:
                     if value:
                         dynamic_values[field_id] = value
 
-                c.execute('''INSERT INTO students (id, first_name, last_name_p, last_name_m, matricula, carrera, project_id)
-                             VALUES (%s, %s, %s, %s, %s, %s, %s)''',
+                event_dynamic_values = {}
+                for field in event_fields:
+                    field_id = field[0]
+                    field_name = field[2]
+                    is_required = bool(field[4])
+                    raw_value = row[field_name] if field_name in df.columns else ""
+                    value = "" if pd.isna(raw_value) else str(raw_value).strip()
+                    if is_required and not value:
+                        raise ValueError(f"Falta {field_name}")
+                    if value:
+                        event_dynamic_values[field_id] = value
+
+                c.execute('''INSERT INTO students (id, first_name, last_name_p, last_name_m, matricula, carrera, event_id, project_id)
+                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)''',
                           (student_id, str(row['first_name']), str(row['last_name_p']), str(row['last_name_m']),
-                           matricula, str(row['carrera']), project_id))
+                           matricula, str(row['carrera']), event_id, project_id))
                 participant_id = self._ensure_participant_for_student(
                     c,
                     student_id,
                     str(row['first_name']),
                     str(row['last_name_p']),
                     str(row['last_name_m']),
-                    project_id
+                    project_id,
+                    event_id
                 )
                 self._ensure_credential_for_participant(c, participant_id)
                 self._save_participant_field_values(c, participant_id, dynamic_values)
+                if event_dynamic_values:
+                    now = datetime.now()
+                    for field_id, value in event_dynamic_values.items():
+                        c.execute(
+                            """INSERT INTO participant_event_field_values
+                               (participant_id, field_id, value, created_at, updated_at)
+                               VALUES (%s, %s, %s, %s, %s)""",
+                            (participant_id, field_id, value, now, now)
+                        )
                 conn.commit()
                 success_count += 1
             except mysql.connector.Error as e:
@@ -879,12 +1049,12 @@ class DatabaseManager:
 
         return report_path
 
-    def get_all_students_filtered(self, matricula_search='', apellido_p_search='', project_id_filter=''):
+    def get_all_students_filtered(self, matricula_search='', apellido_p_search='', project_id_filter='', event_id_filter=''):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
         
         query = """
-            SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera, s.project_id
+            SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera, s.project_id, s.event_id
             FROM students s
             WHERE 1=1
         """
@@ -901,6 +1071,10 @@ class DatabaseManager:
         if project_id_filter:
             query += " AND s.project_id = %s"
             params.append(project_id_filter)
+
+        if event_id_filter:
+            query += " AND s.event_id = %s"
+            params.append(event_id_filter)
         
         c.execute(query, params)
         students = c.fetchall()
