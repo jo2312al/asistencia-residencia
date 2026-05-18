@@ -1,60 +1,66 @@
 {% extends 'base.html' %}
 {% block title %}Dashboard Staff{% endblock %}
 {% block content %}
-<h1 class="text-center tecn-blue-text mb-4">Panel Staff - Innovatec</h1>
+<section class="mb-6">
+    <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Operacion</p>
+    <h1 class="tecn-blue-text !mb-1">Panel Staff</h1>
+    <p class="text-slate-500">Acceso rapido para escanear, consultar participantes y generar reportes.</p>
+</section>
 
 <div class="row g-3 mb-4">
     <div class="col-md-6">
-        <div class="card shadow h-100">
+        <div class="card h-100">
             <div class="card-body">
-                <h5 class="card-title">Tomar asistencia</h5>
-                <p class="card-text">Usa el escaner para registrar asistencia con QR.</p>
+                <h2 class="h5 mb-2">Tomar asistencia</h2>
+                <p class="text-slate-500">Abre el escaner y registra entradas con QR por evento.</p>
                 <a class="btn tecn-blue text-white" href="{{ url_for('scan') }}">Abrir escaner</a>
             </div>
         </div>
     </div>
     <div class="col-md-6">
-        <div class="card shadow h-100">
+        <div class="card h-100">
             <div class="card-body">
-                <h5 class="card-title">Consulta de datos</h5>
-                <p class="card-text">Revisa lista de participantes y descarga QRs.</p>
-                <a class="btn btn-outline-primary" href="{{ url_for('data') }}">Ir a datos</a>
+                <h2 class="h5 mb-2">Participantes</h2>
+                <p class="text-slate-500">Consulta listas, QR y credenciales por evento.</p>
+                <a class="btn btn-outline-primary" href="{{ url_for('data') }}">Ver participantes</a>
             </div>
         </div>
     </div>
 </div>
 
-<div class="card shadow">
-    <div class="card-header tecn-blue text-white">
+<div class="card">
+    <div class="card-header">
         <h2 class="h5 mb-0">Generar reporte de asistencias</h2>
     </div>
     <div class="card-body">
         <form id="report-form" method="POST">
-            <div class="mb-3">
-                <label for="start_date" class="form-label">Fecha de inicio</label>
-                <input type="date" class="form-control" id="start_date" name="start_date">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label for="start_date" class="form-label">Fecha de inicio</label>
+                    <input type="date" class="form-control" id="start_date" name="start_date">
+                </div>
+                <div class="col-md-3">
+                    <label for="end_date" class="form-label">Fecha de fin</label>
+                    <input type="date" class="form-control" id="end_date" name="end_date">
+                </div>
+                <div class="col-md-4">
+                    <label for="project_id" class="form-label">Proyecto</label>
+                    <select class="form-select" id="project_id" name="project_id">
+                        <option value="">Todos los proyectos</option>
+                        {% for project in projects %}
+                        <option value="{{ project[0] }}">{{ project[1] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="format" class="form-label">Formato</label>
+                    <select class="form-select" id="format" name="format" required>
+                        <option value="pdf">PDF</option>
+                        <option value="excel">Excel</option>
+                    </select>
+                </div>
             </div>
-            <div class="mb-3">
-                <label for="end_date" class="form-label">Fecha de fin</label>
-                <input type="date" class="form-control" id="end_date" name="end_date">
-            </div>
-            <div class="mb-3">
-                <label for="project_id" class="form-label">Proyecto</label>
-                <select class="form-select" id="project_id" name="project_id">
-                    <option value="">Todos los proyectos</option>
-                    {% for project in projects %}
-                    <option value="{{ project[0] }}">{{ project[1] }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="mb-3">
-                <label for="format" class="form-label">Formato</label>
-                <select class="form-select" id="format" name="format" required>
-                    <option value="pdf">PDF</option>
-                    <option value="excel">Excel</option>
-                </select>
-            </div>
-            <button type="submit" class="btn tecn-blue text-white">Generar reporte</button>
+            <button type="submit" class="btn tecn-blue text-white mt-3">Generar reporte</button>
         </form>
         <div id="report-result" class="mt-3"></div>
     </div>

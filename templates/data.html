@@ -1,7 +1,11 @@
 {% extends 'base.html' %}
 {% block title %}Datos de Participantes{% endblock %}
 {% block content %}
-<h1 class="text-center tecn-blue-text mb-4">Participantes - Innovatec TecNM</h1>
+<section class="mb-6">
+    <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Credenciales</p>
+    <h1 class="tecn-blue-text !mb-1">Participantes</h1>
+    <p class="text-slate-500">Filtra por evento, descarga credenciales o envia QR por correo.</p>
+</section>
 <div class="card shadow">
     <div class="card-header tecn-blue text-white">
         <h2 class="h5 mb-0">Lista de Participantes</h2>
@@ -48,7 +52,7 @@
         </form>
 
         <!-- Botones de descarga -->
-        <div class="mb-3">
+        <div class="mb-3 d-flex flex-wrap gap-2">
             <a href="{{ url_for('download_all_qrs', event_id=event_id_filter) }}" class="btn btn-primary me-2">
                 <i class="bi bi-download"></i> Descargar Todos los Códigos QR (ZIP)
             </a>

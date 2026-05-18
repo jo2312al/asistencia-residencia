@@ -1,47 +1,46 @@
 {% extends 'base.html' %}
 {% block title %}Escanear QR{% endblock %}
 {% block content %}
-<div class="container mt-4">
-    <h1 class="text-center tecn-blue-text mb-4">Escanear QR - Innovatec TecNM</h1>
-    <div class="card shadow">
-        <div class="card-header tecn-blue text-white">
-            <h2 class="h5 mb-0">Escáner de Asistencia</h2>
+<section class="mb-6">
+    <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Asistencia</p>
+    <h1 class="tecn-blue-text !mb-1">Escanear QR</h1>
+    <p class="text-slate-500">Selecciona el evento activo y escanea la credencial del participante.</p>
+</section>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="h5 mb-0">Escaner de asistencia</h2>
+    </div>
+    <div class="card-body">
+        <div class="mb-4">
+            <label for="event_id" class="form-label">Evento</label>
+            <select class="form-select" id="event_id" name="event_id">
+                <option value="">Registro general</option>
+                {% for event in events %}
+                <option value="{{ event[0] }}">{{ event[1] }}{% if event[2] %} - {{ event[2] }}{% endif %}{% if event[3] %} ({{ event[3] }}){% endif %}</option>
+                {% endfor %}
+            </select>
         </div>
-        <div class="card-body text-center">
-            <div class="mb-3 text-start">
-                <label for="event_id" class="form-label">Evento</label>
-                <select class="form-select" id="event_id" name="event_id">
-                    <option value="">Registro general</option>
-                    {% for event in events %}
-                    <option value="{{ event[0] }}">{{ event[1] }}{% if event[2] %} - {{ event[2] }}{% endif %}{% if event[3] %} ({{ event[3] }}){% endif %}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <video id="qr-video" class="img-fluid" autoplay playsinline></video>
-            <canvas id="qr-canvas" style="display: none;"></canvas>
-            <div id="qr-result" class="mt-3"></div>
+        <div class="mx-auto max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-slate-950">
+            <video id="qr-video" class="w-100" autoplay playsinline></video>
         </div>
+        <canvas id="qr-canvas" style="display: none;"></canvas>
+        <div id="qr-result" class="mt-3"></div>
     </div>
 </div>
 
-<!-- Modal para resultados -->
 <div class="modal fade" id="qrModal" tabindex="-1" aria-labelledby="qrModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="qrModalLabel">Resultado del Escaneo</h5>
+                <h5 class="modal-title" id="qrModalLabel">Resultado del escaneo</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body" id="modal-message">
-                <!-- Mensaje se inserta aquí -->
-            </div>
+            <div class="modal-body" id="modal-message"></div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
             </div>
         </div>
     </div>
 </div>
-
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-<script src="{{ url_for('static', filename='js/scripts.js') }}"></script>
 {% endblock %}

@@ -380,9 +380,4 @@ document.addEventListener('DOMContentLoaded', function() {
     if (document.getElementById('report-form')) {
         initializeReportForm();
     }
-    // Estilo dinámico para tecn-blue
-    const elements = document.getElementsByClassName('tecn-blue');
-    for (let element of elements) {
-        element.style.color = '#003087';
-    }
 });

@@ -1,18 +1,246 @@
+:root {
+    --asistec-brand: #0b5aa4;
+    --asistec-brand-dark: #10324d;
+    --asistec-surface: #ffffff;
+    --asistec-border: #e2e8f0;
+    --asistec-muted: #64748b;
+}
+
 body {
-    background-color: #FFFFFF;
+    background:
+        radial-gradient(circle at top left, rgba(15, 111, 198, 0.10), transparent 32rem),
+        linear-gradient(180deg, #f8fafc 0%, #eef4fb 100%);
 }
-.tecn-blue {
-    background-color: #003087;
+
+a {
+    color: var(--asistec-brand);
 }
+
+.app-nav-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.75rem;
+    padding: 0.55rem 0.85rem;
+    color: #334155;
+    font-size: 0.92rem;
+    font-weight: 650;
+    text-decoration: none;
+    transition: background-color 160ms ease, color 160ms ease;
+}
+
+.app-nav-link:hover,
+.app-nav-link:focus {
+    background: #eef6ff;
+    color: var(--asistec-brand);
+    text-decoration: none;
+}
+
+.app-dropdown {
+    border: 1px solid var(--asistec-border);
+    border-radius: 1rem;
+    padding: 0.45rem;
+    box-shadow: 0 18px 60px rgba(15, 23, 42, 0.12);
+}
+
+.dropdown-item {
+    border-radius: 0.7rem;
+    color: #334155;
+    font-weight: 600;
+    padding: 0.65rem 0.85rem;
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus {
+    background: #eef6ff;
+    color: var(--asistec-brand);
+}
+
+h1,
 .tecn-blue-text {
-    color: #003087;
+    color: #0f172a !important;
+    font-weight: 760;
+    letter-spacing: 0;
 }
+
+h1 {
+    margin-bottom: 1.35rem !important;
+    text-align: left !important;
+    font-size: clamp(1.75rem, 1.3rem + 1vw, 2.45rem);
+}
+
+.tecn-blue {
+    background: linear-gradient(135deg, var(--asistec-brand), var(--asistec-brand-dark)) !important;
+}
+
 .tecn-red {
-    background-color: #C8102E;
+    background-color: #b91c1c !important;
 }
-.logo-container img {
+
+.card {
+    border: 1px solid rgba(226, 232, 240, 0.95) !important;
+    border-radius: 1.2rem !important;
+    background: rgba(255, 255, 255, 0.96) !important;
+    box-shadow: 0 18px 60px rgba(15, 23, 42, 0.08) !important;
+    overflow: hidden;
+}
+
+.card-header {
+    border-bottom: 1px solid var(--asistec-border) !important;
+    background: #fff !important;
+    color: #0f172a !important;
+    padding: 1rem 1.25rem !important;
+}
+
+.card-header h2,
+.card-title {
+    color: #0f172a;
+    font-weight: 750;
+    letter-spacing: 0;
+}
+
+.card-body {
+    padding: 1.25rem !important;
+}
+
+.form-label {
+    color: #334155;
+    font-size: 0.88rem;
+    font-weight: 700;
+    margin-bottom: 0.4rem;
+}
+
+.form-control,
+.form-select,
+.select2-container .select2-selection--single {
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 0.8rem !important;
+    min-height: 2.75rem;
+    color: #0f172a;
+    box-shadow: none !important;
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--asistec-brand) !important;
+    box-shadow: 0 0 0 4px rgba(15, 111, 198, 0.14) !important;
+}
+
+.form-text,
+.text-muted {
+    color: var(--asistec-muted) !important;
+}
+
+.btn {
+    border-radius: 0.85rem !important;
+    font-weight: 700 !important;
+    padding: 0.62rem 0.95rem !important;
+}
+
+.btn-primary,
+.btn.tecn-blue {
+    border-color: var(--asistec-brand) !important;
+    background: var(--asistec-brand) !important;
+    color: #fff !important;
+}
+
+.btn-primary:hover,
+.btn.tecn-blue:hover {
+    background: var(--asistec-brand-dark) !important;
+}
+
+.btn-outline-primary {
+    border-color: #bfdbfe !important;
+    color: var(--asistec-brand) !important;
+}
+
+.btn-outline-primary:hover {
+    background: #eef6ff !important;
+    color: var(--asistec-brand-dark) !important;
+}
+
+.btn-outline-success {
+    border-color: #bbf7d0 !important;
+    color: #15803d !important;
+}
+
+.btn-outline-success:hover {
+    background: #f0fdf4 !important;
+    color: #166534 !important;
+}
+
+.table {
+    margin-bottom: 0;
+}
+
+.table thead th {
+    border-bottom: 1px solid var(--asistec-border);
+    color: #475569;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.table tbody td {
+    border-color: #edf2f7;
+    color: #334155;
+    vertical-align: middle;
+}
+
+.table-striped > tbody > tr:nth-of-type(odd) > * {
+    background-color: rgba(248, 250, 252, 0.8) !important;
+}
+
+.table-responsive {
+    border: 1px solid var(--asistec-border);
+    border-radius: 1rem;
+}
+
+.alert {
+    border-radius: 1rem !important;
+}
+
+.modal-content {
+    border: 0;
+    border-radius: 1.2rem;
+    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
+}
+
+.modal-header {
+    border-bottom: 1px solid var(--asistec-border);
+}
+
+.modal-footer {
+    border-top: 1px solid var(--asistec-border);
+}
+
+.display-6 {
+    color: var(--asistec-brand-dark);
+    font-weight: 800;
+}
+
+.logo-container img,
+.navbar-brand img {
     max-height: 40px;
 }
-.navbar-brand img {
-    max-height: 30px;
+
+@media (max-width: 768px) {
+    main {
+        padding-top: 1rem;
+    }
+
+    .card-body {
+        padding: 1rem !important;
+    }
+
+    .btn,
+    .btn-group {
+        width: 100%;
+        margin-bottom: 0.45rem;
+    }
+
+    .d-inline {
+        display: block !important;
+    }
 }

@@ -223,7 +223,7 @@ def build_credential_card(student, styles, cell_width, cell_height):
     if os.path.exists(logo_path):
         logo_cell = Image(logo_path, width=0.85 * inch, height=0.85 * inch)
     else:
-        logo_cell = Paragraph("<b>Innovatec</b>", name_style)
+        logo_cell = Paragraph("<b>AsisTec</b>", name_style)
 
     qr_image = Image(student["qr_path"], width=1.65 * inch, height=1.65 * inch)
     qr_image.hAlign = "CENTER"
@@ -293,7 +293,7 @@ def build_rectangular_credential_card(student, styles, card_width, card_height):
     if os.path.exists(logo_path):
         logo_cell = Image(logo_path, width=0.75 * inch, height=0.75 * inch)
     else:
-        logo_cell = Paragraph("<b>Innovatec</b>", name_style)
+        logo_cell = Paragraph("<b>AsisTec</b>", name_style)
 
     qr_image = Image(student["qr_path"], width=1.25 * inch, height=1.25 * inch)
     info = Table(
@@ -1281,7 +1281,7 @@ def generate_report():
             doc = SimpleDocTemplate(report_path, pagesize=letter)
             elements = []
             styles = getSampleStyleSheet()
-            elements.append(Paragraph("Reporte de Asistencias - Innovatec TecNM", styles["Title"]))
+            elements.append(Paragraph("Reporte de Asistencias - AsisTec", styles["Title"]))
 
             table_data = [["Matricula", "Nombre", "Apellido P", "Apellido M", "Carrera", "Proyecto", "Fecha/Hora"]]
             for row in report_data:
@@ -1318,7 +1318,7 @@ def generate_report():
             report_path = os.path.join(report_dir, f"report_{timestamp}.xlsx").replace("\\", "/")
             workbook = xlsxwriter.Workbook(report_path)
             worksheet = workbook.add_worksheet()
-            worksheet.write("A1", "Reporte de Asistencias - Innovatec TecNM")
+            worksheet.write("A1", "Reporte de Asistencias - AsisTec")
             headers = ["Matricula", "Nombre", "Apellido P", "Apellido M", "Carrera", "Proyecto", "Fecha/Hora"]
             for col, header in enumerate(headers):
                 worksheet.write(1, col, header)
