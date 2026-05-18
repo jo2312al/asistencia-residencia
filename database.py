@@ -576,6 +576,45 @@ class DatabaseManager:
         conn.close()
         return project_id
 
+    def get_or_create_project_by_name(self, name, event_id):
+        project_name = (name or "").strip()
+        if not project_name:
+            return None
+
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            "SELECT id FROM projects WHERE name = %s AND (event_id = %s OR event_id IS NULL)",
+            (project_name, event_id)
+        )
+        existing = c.fetchone()
+        if existing:
+            project_id = existing[0]
+            c.execute("UPDATE projects SET event_id = %s WHERE id = %s AND event_id IS NULL", (event_id, project_id))
+            conn.commit()
+            conn.close()
+            return project_id
+
+        try:
+            c.execute(
+                "INSERT INTO projects (name, description, event_id) VALUES (%s, %s, %s)",
+                (project_name, None, event_id)
+            )
+            conn.commit()
+            project_id = c.lastrowid
+        except mysql.connector.Error as e:
+            if e.errno != 1062:
+                conn.close()
+                raise
+            c.execute("SELECT id FROM projects WHERE name = %s", (project_name,))
+            row = c.fetchone()
+            project_id = row[0] if row else None
+            if project_id:
+                c.execute("UPDATE projects SET event_id = %s WHERE id = %s AND event_id IS NULL", (event_id, project_id))
+                conn.commit()
+        conn.close()
+        return project_id
+
     def get_all_events(self):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
@@ -825,6 +864,7 @@ class DatabaseManager:
         success_count = 0
         project_fields = []
         event_fields = []
+        project_column = next((col for col in ('project_id', 'project_name', 'project', 'proyecto') if col in df.columns), None)
 
         if event_id:
             c.execute("SELECT id FROM events WHERE id = %s", (event_id,))
@@ -860,8 +900,19 @@ class DatabaseManager:
             try:
                 participant_type = str(row['participant_type']).strip().lower() if 'participant_type' in df.columns and not pd.isna(row['participant_type']) else 'alumno'
                 email_value = str(row['email']).strip() if 'email' in df.columns and not pd.isna(row['email']) else None
+                row_project_id = project_id
+                if project_column and not pd.isna(row[project_column]):
+                    raw_project = str(row[project_column]).strip()
+                    if raw_project:
+                        if project_column == 'project_id' and raw_project.isdigit():
+                            row_project_id = int(raw_project)
+                        else:
+                            row_project_id = self.get_or_create_project_by_name(raw_project, event_id)
+                row_project_fields = project_fields
+                if row_project_id and row_project_id != project_id:
+                    row_project_fields = self.get_project_fields(row_project_id)
                 dynamic_values = {}
-                for field in project_fields:
+                for field in row_project_fields:
                     field_id = field[0]
                     field_name = field[2]
                     is_required = bool(field[4])
@@ -891,14 +942,14 @@ class DatabaseManager:
                 c.execute('''INSERT INTO students (id, first_name, last_name_p, last_name_m, matricula, carrera, event_id, project_id)
                              VALUES (%s, %s, %s, %s, %s, %s, %s, %s)''',
                           (student_id, str(row['first_name']), str(row['last_name_p']), str(row['last_name_m']),
-                           matricula, str(row['carrera']), event_id, project_id))
+                           matricula, str(row['carrera']), event_id, row_project_id))
                 participant_id = self._ensure_participant_for_student(
                     c,
                     student_id,
                     str(row['first_name']),
                     str(row['last_name_p']),
                     str(row['last_name_m']),
-                    project_id,
+                    row_project_id,
                     event_id,
                     email_value,
                     participant_type
