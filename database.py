@@ -81,6 +81,24 @@ class DatabaseManager:
         conn.commit()
         conn.close()
 
+    def get_all_users(self):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute("SELECT username, role FROM users ORDER BY username")
+        users = c.fetchall()
+        conn.close()
+        return users
+
+    def update_user_role(self, username, role):
+        role_value = self.normalize_role(role)
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute("UPDATE users SET role = %s WHERE username = %s", (role_value, username))
+        conn.commit()
+        updated = c.rowcount
+        conn.close()
+        return updated > 0
+
     def ensure_user(self, username, password_hash, role='guest'):
         role_value = self.normalize_role(role)
         conn = mysql.connector.connect(**self.db_config)

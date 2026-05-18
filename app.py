@@ -22,6 +22,11 @@ from database import DatabaseManager
 from qr_manager import QRManager
 
 VALID_ROLES = ("admin", "staff", "guest")
+ROLE_LABELS = {
+    "admin": "Administrador",
+    "staff": "Staff",
+    "guest": "Consulta",
+}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
@@ -113,7 +118,7 @@ def role_required(*roles, api=False):
 
 @app.context_processor
 def inject_template_helpers():
-    return {"VALID_ROLES": VALID_ROLES}
+    return {"VALID_ROLES": VALID_ROLES, "ROLE_LABELS": ROLE_LABELS}
 
 
 @login_manager.user_loader
@@ -215,7 +220,34 @@ def create_user():
             return jsonify({"success": False, "error": str(e)}), 400
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 500
-    return render_template("create_user.html", roles=VALID_ROLES)
+    users = db_manager.get_all_users()
+    return render_template("create_user.html", roles=VALID_ROLES, users=users)
+
+
+@app.route("/users/<path:username>/role", methods=["POST"])
+@login_required
+@role_required("admin", api=True)
+def update_user_role(username):
+    try:
+        if username == current_user.id:
+            return jsonify({"success": False, "error": "No puedes cambiar tu propio rol"}), 400
+
+        role = request.form.get("role")
+        if request.is_json:
+            payload = request.get_json(silent=True) or {}
+            role = payload.get("role", role)
+
+        if not role:
+            return jsonify({"success": False, "error": "Rol requerido"}), 400
+
+        updated = db_manager.update_user_role(username, role)
+        if not updated:
+            return jsonify({"success": False, "error": "Usuario no encontrado"}), 404
+        return jsonify({"success": True, "message": "Rol actualizado correctamente"})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/register")
