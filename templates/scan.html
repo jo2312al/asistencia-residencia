@@ -1,19 +1,20 @@
 {% extends 'base.html' %}
+{% from '_help.html' import tip %}
 {% block title %}Escanear QR{% endblock %}
 {% block content %}
 <section class="mb-6">
     <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Asistencia</p>
-    <h1 class="tecn-blue-text !mb-1">Escanear QR</h1>
+    <h1 class="tecn-blue-text !mb-1">Escanear QR {{ tip('Selecciona el evento correcto antes de escanear para registrar la asistencia en el lugar adecuado.') }}</h1>
     <p class="text-slate-500">Selecciona el evento activo y escanea la credencial del participante.</p>
 </section>
 
 <div class="card">
     <div class="card-header">
-        <h2 class="h5 mb-0">Escaner de asistencia</h2>
+        <h2 class="h5 mb-0">Escaner de asistencia {{ tip('El QR contiene un token, no datos personales. El sistema busca ese token y registra asistencia.') }}</h2>
     </div>
     <div class="card-body">
         <div class="mb-4">
-            <label for="event_id" class="form-label">Evento</label>
+            <label for="event_id" class="form-label">Evento {{ tip('Si lo dejas en registro general, la asistencia no quedara amarrada a un evento especifico.') }}</label>
             <select class="form-select" id="event_id" name="event_id">
                 <option value="">Registro general</option>
                 {% for event in events %}

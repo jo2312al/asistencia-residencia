@@ -1,17 +1,18 @@
 {% extends 'base.html' %}
+{% from '_help.html' import tip %}
 {% block title %}Registrar Participantes{% endblock %}
 {% block content %}
-<h1 class="text-center tecn-blue-text mb-4">Registrar Participantes - AsisTec</h1>
+<h1 class="text-center tecn-blue-text mb-4">Registrar Participantes - AsisTec {{ tip('Primero elige evento; despues el sistema muestra proyectos y campos adicionales de ese evento.') }}</h1>
 
 <div class="card shadow mb-4">
     <div class="card-header tecn-blue text-white">
-        <h2 class="h5 mb-0">Registro Manual</h2>
+        <h2 class="h5 mb-0">Registro Manual {{ tip('Registra una persona y genera su credencial con QR.') }}</h2>
     </div>
     <div class="card-body">
         <form id="register-form" method="POST">
             <div class="row g-3">
                 <div class="col-md-6">
-                    <label for="event_id" class="form-label">Evento</label>
+                    <label for="event_id" class="form-label">Evento {{ tip('El evento controla que campos se piden y donde se guardara la asistencia.') }}</label>
                     <select class="form-select" id="event_id" name="event_id" required>
                         <option value="">Seleccione un evento</option>
                         {% for event in events %}
@@ -20,13 +21,13 @@
                     </select>
                 </div>
                 <div class="col-md-6">
-                    <label for="project_id" class="form-label">Proyecto</label>
+                    <label for="project_id" class="form-label">Proyecto {{ tip('Opcional. Solo aparece si el evento tiene proyectos asociados.') }}</label>
                     <select class="form-select" id="project_id" name="project_id">
                         <option value="">Seleccione primero un evento</option>
                     </select>
                 </div>
                 <div class="col-md-4">
-                    <label for="participant_type" class="form-label">Tipo de participante</label>
+                    <label for="participant_type" class="form-label">Tipo de participante {{ tip('Si registras asesores y alumnos del mismo proyecto, el correo puede agruparse por asesor.') }}</label>
                     <select class="form-select" id="participant_type" name="participant_type" required>
                         <option value="alumno">Alumno</option>
                         <option value="asesor">Asesor</option>
@@ -66,13 +67,13 @@
 
 <div class="card shadow">
     <div class="card-header tecn-blue text-white">
-        <h2 class="h5 mb-0">Cargar Participantes desde Excel</h2>
+        <h2 class="h5 mb-0">Cargar Participantes desde Excel {{ tip('Importa participantes en lote. El archivo debe incluir las columnas base indicadas.') }}</h2>
     </div>
     <div class="card-body">
         <form id="excel-form" method="POST" enctype="multipart/form-data" action="/upload_excel">
             <div class="row g-3 align-items-end">
                 <div class="col-lg-5">
-                    <label for="excel_file" class="form-label">Seleccionar archivo Excel</label>
+                    <label for="excel_file" class="form-label">Seleccionar archivo Excel {{ tip('Usa .xlsx o .xls. Si incluyes columna proyecto, el sistema intentara asociarlo o crearlo segun el evento.') }}</label>
                     <input type="file" class="form-control" id="excel_file" name="excel_file" accept=".xlsx,.xls" required>
                     <div class="form-text">Columnas base: first_name, last_name_p, last_name_m, matricula, carrera. Opcionales: email, participant_type, proyecto.</div>
                 </div>

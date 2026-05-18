@@ -1,0 +1,3 @@
+{% macro tip(text) -%}
+<span class="app-help" data-bs-toggle="tooltip" data-bs-placement="top" title="{{ text }}" role="button" tabindex="0" aria-label="Ayuda: {{ text }}">?</span>
+{%- endmacro %}

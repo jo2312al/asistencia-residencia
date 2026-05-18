@@ -1,13 +1,14 @@
 {% extends 'base.html' %}
+{% from '_help.html' import tip %}
 {% block title %}Eventos{% endblock %}
 {% block content %}
-<h1 class="text-center tecn-blue-text mb-4">Eventos</h1>
+<h1 class="text-center tecn-blue-text mb-4">Eventos {{ tip('Crea el evento principal. Los participantes, credenciales y asistencias se organizan por evento.') }}</h1>
 
 <div class="row g-4 mb-4">
     <div class="col-lg-8">
         <div class="card shadow h-100">
             <div class="card-header tecn-blue text-white">
-                <h2 class="h5 mb-0">Crear evento</h2>
+                <h2 class="h5 mb-0">Crear evento {{ tip('Usa evento para conferencias, talleres, exposiciones o cualquier actividad donde tomaras asistencia.') }}</h2>
             </div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('create_event') }}">
@@ -17,7 +18,7 @@
                             <input type="text" class="form-control" id="name" name="name" placeholder="Conferencia inaugural" required>
                         </div>
                         <div class="col-md-4">
-                            <label for="event_type" class="form-label">Tipo</label>
+                            <label for="event_type" class="form-label">Tipo {{ tip('Ayuda a identificar el uso del evento en reportes y escaneo.') }}</label>
                             <select class="form-select" id="event_type" name="event_type">
                                 <option value="general">General</option>
                                 <option value="conferencia">Conferencia</option>
@@ -49,7 +50,7 @@
                             </select>
                         </div>
                         <div class="col-md-3">
-                            <label for="duplicate_policy" class="form-label">Duplicados</label>
+                            <label for="duplicate_policy" class="form-label">Duplicados {{ tip('Define si una credencial puede registrarse una vez, una vez por dia o multiples veces.') }}</label>
                             <select class="form-select" id="duplicate_policy" name="duplicate_policy">
                                 <option value="once_per_day">Una vez por dia</option>
                                 <option value="once">Una sola vez</option>
@@ -61,7 +62,7 @@
                             <textarea class="form-control" id="description" name="description" rows="2"></textarea>
                         </div>
                         <div class="col-12">
-                            <label class="form-label">Datos que solicitara el evento</label>
+                            <label class="form-label">Datos que solicitara el evento {{ tip('Estos campos apareceran al registrar participantes para este evento.') }}</label>
                             <div class="row g-2">
                                 <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" id="field_email" name="event_fields" value="email" checked><label class="form-check-label" for="field_email">Correo</label></div></div>
                                 <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" id="field_telefono" name="event_fields" value="telefono"><label class="form-check-label" for="field_telefono">Telefono</label></div></div>
@@ -85,7 +86,7 @@
     <div class="col-lg-4">
         <div class="card shadow h-100">
             <div class="card-header tecn-blue text-white">
-                <h2 class="h5 mb-0">Agregar proyecto</h2>
+                <h2 class="h5 mb-0">Agregar proyecto {{ tip('Proyecto es un registro simple asociado a un evento, por ejemplo un proyecto de exposicion.') }}</h2>
             </div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('create_project') }}">
@@ -98,7 +99,7 @@
                         <textarea class="form-control" id="project_description" name="description" rows="2"></textarea>
                     </div>
                     <div class="mb-3">
-                        <label for="project_event_id" class="form-label">Evento asociado</label>
+                        <label for="project_event_id" class="form-label">Evento asociado {{ tip('Asocia el proyecto al evento donde se registraran sus participantes.') }}</label>
                         <select class="form-select" id="project_event_id" name="event_id">
                             <option value="">Sin evento</option>
                             {% for event in events %}

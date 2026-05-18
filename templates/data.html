@@ -1,21 +1,22 @@
 {% extends 'base.html' %}
+{% from '_help.html' import tip %}
 {% block title %}Participantes{% endblock %}
 {% block content %}
 <section class="mb-6">
     <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Credenciales</p>
-    <h1 class="tecn-blue-text !mb-1">Participantes</h1>
+    <h1 class="tecn-blue-text !mb-1">Participantes {{ tip('La lista siempre se consulta por evento para no mezclar credenciales ni envios.') }}</h1>
     <p class="text-slate-500">Primero selecciona un evento; despues consulta participantes, credenciales y envios.</p>
 </section>
 
 <div class="card shadow">
     <div class="card-header tecn-blue text-white">
-        <h2 class="h5 mb-0">Seleccionar evento</h2>
+        <h2 class="h5 mb-0">Seleccionar evento {{ tip('Elige un evento para cargar sus participantes, proyectos y acciones de credencial.') }}</h2>
     </div>
     <div class="card-body">
         <form method="GET" action="{{ url_for('data') }}" class="mb-4">
             <div class="row g-3">
                 <div class="col-md-3">
-                    <label for="event_filter" class="form-label">Evento</label>
+                    <label for="event_filter" class="form-label">Evento {{ tip('Obligatorio para consultar o enviar credenciales.') }}</label>
                     <select class="form-control" id="event_filter" name="event_id" required>
                         <option value="">Selecciona un evento</option>
                         {% for event in events %}
@@ -34,7 +35,7 @@
                     <input type="text" class="form-control" id="apellido_p_search" name="apellido_p" value="{{ apellido_p_search }}">
                 </div>
                 <div class="col-md-3">
-                    <label for="project_filter" class="form-label">Proyecto</label>
+                    <label for="project_filter" class="form-label">Proyecto {{ tip('Filtra solo participantes de un proyecto dentro del evento seleccionado.') }}</label>
                     <select class="form-control" id="project_filter" name="project_id">
                         <option value="">Todos los proyectos</option>
                         {% for project in projects %}
@@ -70,6 +71,7 @@
             <form method="POST" action="{{ url_for('send_event_credentials') }}" class="d-inline">
                 <input type="hidden" name="event_id" value="{{ event_id_filter }}">
                 <button type="submit" class="btn btn-outline-success">Enviar credenciales</button>
+                {{ tip('Envia credenciales del evento. Si hay asesor por proyecto, agrupa envios al asesor.') }}
             </form>
         </div>
 

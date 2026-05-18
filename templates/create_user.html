@@ -1,11 +1,12 @@
 {% extends 'base.html' %}
+{% from '_help.html' import tip %}
 {% block title %}Crear Usuario{% endblock %}
 {% block content %}
 <div class="container mt-4">
-    <h1 class="text-center tecn-blue-text mb-4">Usuarios y roles</h1>
+    <h1 class="text-center tecn-blue-text mb-4">Usuarios y roles {{ tip('Administra permisos para separar administradores, staff y consulta.') }}</h1>
     <div class="card shadow mb-4">
         <div class="card-header tecn-blue text-white">
-            <h2 class="h5 mb-0">Alta de usuario</h2>
+            <h2 class="h5 mb-0">Alta de usuario {{ tip('Crea accesos para personas que administraran, escanearan o consultaran reportes.') }}</h2>
         </div>
         <div class="card-body">
             <form id="create-user-form" method="POST" action="{{ url_for('create_user') }}">
@@ -18,7 +19,7 @@
                     <input type="password" class="form-control" id="password" name="password" required>
                 </div>
                 <div class="mb-3">
-                    <label for="role" class="form-label">Rol</label>
+                    <label for="role" class="form-label">Rol {{ tip('Admin gestiona todo. Staff escanea y consulta. Guest solo consulta lo permitido.') }}</label>
                     <select class="form-select" id="role" name="role" required>
                         {% for role in roles %}
                         <option value="{{ role }}">{{ ROLE_LABELS.get(role, role) }}</option>
@@ -33,7 +34,7 @@
 
     <div class="card shadow">
         <div class="card-header tecn-blue text-white">
-            <h2 class="h5 mb-0">Usuarios existentes</h2>
+            <h2 class="h5 mb-0">Usuarios existentes {{ tip('Puedes cambiar roles, excepto el tuyo propio para evitar quedarte sin acceso.') }}</h2>
         </div>
         <div class="card-body">
             <div class="table-responsive">

@@ -1,10 +1,11 @@
 {% extends 'base.html' %}
+{% from '_help.html' import tip %}
 {% block title %}Reportes{% endblock %}
 {% block content %}
-<h1 class="text-center tecn-blue-text mb-4">Reportes - AsisTec</h1>
+<h1 class="text-center tecn-blue-text mb-4">Reportes - AsisTec {{ tip('Genera reportes filtrando por evento, proyecto y rango de fechas.') }}</h1>
 <div class="card shadow">
     <div class="card-header tecn-blue text-white">
-        <h2 class="h5 mb-0">Generar Reporte de Asistencias</h2>
+        <h2 class="h5 mb-0">Generar Reporte de Asistencias {{ tip('Para reportes nuevos, lo ideal es seleccionar evento. El reporte general se mantiene para datos anteriores.') }}</h2>
     </div>
     <div class="card-body">
         <form id="report-form" method="POST">
@@ -17,7 +18,7 @@
                 <input type="date" class="form-control" id="end_date" name="end_date">
             </div>
             <div class="mb-3">
-                <label for="project_id" class="form-label">Proyecto</label>
+                <label for="project_id" class="form-label">Proyecto {{ tip('Filtra asistencias de un proyecto dentro del evento seleccionado.') }}</label>
                 <select class="form-select" id="project_id" name="project_id">
                     <option value="">Todos los proyectos</option>
                     {% for project in projects %}
@@ -26,7 +27,7 @@
                 </select>
             </div>
             <div class="mb-3">
-                <label for="event_id" class="form-label">Evento</label>
+                <label for="event_id" class="form-label">Evento {{ tip('Selecciona el evento para evitar mezclar asistencias de actividades distintas.') }}</label>
                 <select class="form-select" id="event_id" name="event_id">
                     <option value="">Todos / reporte general</option>
                     {% for event in events %}

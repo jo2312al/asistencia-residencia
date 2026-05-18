@@ -288,6 +288,13 @@ function initializeAppNavbar() {
     });
 }
 
+function initializeHelpTooltips() {
+    if (!window.bootstrap) return;
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((element) => {
+        new bootstrap.Tooltip(element);
+    });
+}
+
 // Formulario de registro (para /register)
 function initializeGenerateQRForm() {
     console.log("Inicializando formulario de generación de QR");
@@ -418,6 +425,7 @@ function initializeReportForm() {
 document.addEventListener('DOMContentLoaded', function() {
     console.log("DOM cargado, inicializando scripts");
     initializeAppNavbar();
+    initializeHelpTooltips();
     if (document.getElementById('qr-video')) {
         initializeQRScanner();
     }

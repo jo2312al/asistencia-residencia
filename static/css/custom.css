@@ -159,6 +159,38 @@ a {
     text-decoration: none;
 }
 
+.app-help {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #b8efe0;
+    border-radius: 999px;
+    color: var(--asistec-brand-mid);
+    cursor: help;
+    display: inline-flex;
+    font-size: 0.72rem;
+    font-weight: 850;
+    height: 1.35rem;
+    justify-content: center;
+    line-height: 1;
+    margin-left: 0.35rem;
+    padding: 0;
+    text-decoration: none;
+    width: 1.35rem;
+}
+
+.app-help:hover,
+.app-help:focus {
+    background: var(--asistec-brand-soft);
+    color: var(--asistec-brand-dark);
+    outline: 0;
+}
+
+.form-label .app-help,
+.h5 .app-help,
+h1 .app-help {
+    vertical-align: middle;
+}
+
 .app-role-pill {
     display: inline-flex;
     align-items: center;
