@@ -34,7 +34,7 @@
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
     <header class="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur">
-        <nav class="navbar navbar-expand-lg app-navbar mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+        <nav class="app-navbar mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
             <a class="navbar-brand d-flex align-items-center gap-3 me-xl-4 no-underline" href="{{ url_for('role_home') if current_user.is_authenticated else url_for('login') }}">
                 <img class="app-brand-logo" src="{{ url_for('static', filename='img/asistec.webp') }}" alt="AsisTec" onerror="this.classList.add('d-none'); this.nextElementSibling.classList.remove('d-none');">
                 <span class="app-brand-fallback d-none">AsisTec</span>
@@ -44,42 +44,31 @@
                 </span>
             </a>
 
-            <button class="navbar-toggler app-navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Abrir menu">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-
-            <div class="collapse navbar-collapse app-navbar-menu" id="navbarNav">
-                <div class="navbar-nav ms-auto align-items-xl-center gap-1">
-                    {% if current_user.is_authenticated %}
-                        {% if current_user.role == 'admin' %}
-                        <a class="app-nav-link" href="{{ url_for('admin_dashboard') }}">Dashboard</a>
-                        <a class="app-nav-link" href="{{ url_for('events') }}">Crear evento</a>
-                        <a class="app-nav-link" href="{{ url_for('register') }}">Anadir participante</a>
-                        <a class="app-nav-link" href="{{ url_for('scan') }}">Escanear</a>
-                        <a class="app-nav-link" href="{{ url_for('data') }}">Participantes</a>
-                        <a class="app-nav-link" href="{{ url_for('create_user') }}">Crear usuario</a>
-                        <div class="dropdown nav-item">
-                            <button class="app-nav-link dropdown-toggle" type="button" data-bs-toggle="dropdown">Administracion</button>
-                            <ul class="dropdown-menu dropdown-menu-end app-dropdown">
-                                <li><a class="dropdown-item" href="{{ url_for('reports') }}">Reportes</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('settings') }}">Configuracion</a></li>
-                            </ul>
-                        </div>
-                        {% elif current_user.role == 'staff' %}
-                        <a class="app-nav-link" href="{{ url_for('staff_dashboard') }}">Dashboard</a>
-                        <a class="app-nav-link" href="{{ url_for('scan') }}">Escanear</a>
-                        <a class="app-nav-link" href="{{ url_for('data') }}">Participantes</a>
-                        <a class="app-nav-link" href="{{ url_for('reports') }}">Reportes</a>
-                        {% else %}
-                        <a class="app-nav-link" href="{{ url_for('guest_dashboard') }}">Dashboard</a>
-                        {% endif %}
-                        <span class="app-role-pill">{{ current_user.role }}</span>
-                        <a class="app-session-link" href="{{ url_for('logout') }}">Logout</a>
+            <div class="app-navbar-menu" id="navbarNav">
+                {% if current_user.is_authenticated %}
+                    {% if current_user.role == 'admin' %}
+                    <a class="app-nav-link" href="{{ url_for('admin_dashboard') }}">Dashboard</a>
+                    <a class="app-nav-link" href="{{ url_for('events') }}">Crear evento</a>
+                    <a class="app-nav-link" href="{{ url_for('register') }}">Anadir participante</a>
+                    <a class="app-nav-link" href="{{ url_for('scan') }}">Escanear</a>
+                    <a class="app-nav-link" href="{{ url_for('data') }}">Participantes</a>
+                    <a class="app-nav-link" href="{{ url_for('create_user') }}">Crear usuario</a>
+                    <a class="app-nav-link" href="{{ url_for('reports') }}">Reportes</a>
+                    <a class="app-nav-link" href="{{ url_for('settings') }}">Configuracion</a>
+                    {% elif current_user.role == 'staff' %}
+                    <a class="app-nav-link" href="{{ url_for('staff_dashboard') }}">Dashboard</a>
+                    <a class="app-nav-link" href="{{ url_for('scan') }}">Escanear</a>
+                    <a class="app-nav-link" href="{{ url_for('data') }}">Participantes</a>
+                    <a class="app-nav-link" href="{{ url_for('reports') }}">Reportes</a>
                     {% else %}
-                        <a class="app-session-link" href="{{ url_for('login') }}">Login</a>
+                    <a class="app-nav-link" href="{{ url_for('guest_dashboard') }}">Dashboard</a>
                     {% endif %}
+                    <span class="app-role-pill">{{ current_user.role }}</span>
+                    <a class="app-session-link" href="{{ url_for('logout') }}">Logout</a>
+                {% else %}
+                    <a class="app-session-link" href="{{ url_for('login') }}">Login</a>
+                {% endif %}
                 </div>
-            </div>
         </nav>
     </header>
 
