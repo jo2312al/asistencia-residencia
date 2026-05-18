@@ -86,8 +86,39 @@ class DatabaseManager:
         has_role_column = c.fetchone()[0] > 0
         if not has_role_column:
             c.execute("ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'guest'")
+        self._ensure_column(c, 'participants', 'legacy_student_id', 'VARCHAR(36)')
+        self._ensure_column(c, 'participants', 'created_at', 'DATETIME NULL')
+        self._ensure_column(c, 'participants', 'updated_at', 'DATETIME NULL')
+        self._ensure_column(c, 'credentials', 'qr_path', 'VARCHAR(255)')
+        self._ensure_column(c, 'credentials', 'sent_status', "VARCHAR(30) NOT NULL DEFAULT 'pending'")
+        self._ensure_column(c, 'credentials', 'created_at', 'DATETIME NULL')
+        self._ensure_column(c, 'credentials', 'updated_at', 'DATETIME NULL')
+        self._ensure_column(c, 'attendance_events', 'credential_id', 'VARCHAR(36)')
+        self._ensure_column(c, 'attendance_events', 'legacy_attendance_id', 'INT')
         conn.commit()
         conn.close()
+
+    def _ensure_column(self, cursor, table_name, column_name, definition):
+        cursor.execute("""
+            SELECT COUNT(*)
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = %s
+            AND TABLE_NAME = %s
+            AND COLUMN_NAME = %s
+        """, (self.db_config['database'], table_name, column_name))
+        if cursor.fetchone()[0] == 0:
+            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+
+    def _get_column_data_type(self, cursor, table_name, column_name):
+        cursor.execute("""
+            SELECT DATA_TYPE
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = %s
+            AND TABLE_NAME = %s
+            AND COLUMN_NAME = %s
+        """, (self.db_config['database'], table_name, column_name))
+        row = cursor.fetchone()
+        return row[0] if row else None
 
     def normalize_role(self, role):
         role_value = (role or 'guest').strip().lower()
@@ -196,17 +227,27 @@ class DatabaseManager:
         if existing:
             return {"id": existing[0], "token": existing[1], "qr_path": existing[2]}
 
-        credential_id = str(uuid.uuid4())
         now = datetime.now()
         for _ in range(5):
             token = self._new_credential_token()
             try:
-                cursor.execute(
-                    """INSERT INTO credentials
-                       (id, participant_id, token, status, sent_status, created_at, updated_at)
-                       VALUES (%s, %s, %s, 'active', 'pending', %s, %s)""",
-                    (credential_id, participant_id, token, now, now)
-                )
+                credential_id_type = self._get_column_data_type(cursor, 'credentials', 'id')
+                if credential_id_type in ('int', 'bigint', 'mediumint', 'smallint', 'tinyint'):
+                    cursor.execute(
+                        """INSERT INTO credentials
+                           (participant_id, token, status, sent_status, created_at, updated_at)
+                           VALUES (%s, %s, 'active', 'pending', %s, %s)""",
+                        (participant_id, token, now, now)
+                    )
+                    credential_id = cursor.lastrowid
+                else:
+                    credential_id = str(uuid.uuid4())
+                    cursor.execute(
+                        """INSERT INTO credentials
+                           (id, participant_id, token, status, sent_status, created_at, updated_at)
+                           VALUES (%s, %s, %s, 'active', 'pending', %s, %s)""",
+                        (credential_id, participant_id, token, now, now)
+                    )
                 return {"id": credential_id, "token": token, "qr_path": None}
             except mysql.connector.Error as e:
                 if e.errno != 1062:
