@@ -237,6 +237,57 @@ function initializeProjectFieldsLoader() {
     loadEventFields(projectSelect.value);
 }
 
+function initializeAppNavbar() {
+    const menuButton = document.querySelector('[data-menu-toggle]');
+    const menu = document.querySelector('[data-nav-menu]');
+    const submenuButtons = document.querySelectorAll('[data-submenu-toggle]');
+
+    function closeSubmenus(exceptGroup) {
+        document.querySelectorAll('.app-nav-group.is-open').forEach((group) => {
+            if (group !== exceptGroup) {
+                group.classList.remove('is-open');
+                group.querySelector('[data-submenu-toggle]')?.setAttribute('aria-expanded', 'false');
+            }
+        });
+    }
+
+    if (menuButton && menu) {
+        menuButton.addEventListener('click', function() {
+            const isOpen = menu.classList.toggle('is-open');
+            this.setAttribute('aria-expanded', String(isOpen));
+            if (!isOpen) closeSubmenus();
+        });
+    }
+
+    submenuButtons.forEach((button) => {
+        button.addEventListener('click', function(event) {
+            event.stopPropagation();
+            const group = this.closest('.app-nav-group');
+            if (!group) return;
+            const willOpen = !group.classList.contains('is-open');
+            closeSubmenus(group);
+            group.classList.toggle('is-open', willOpen);
+            this.setAttribute('aria-expanded', String(willOpen));
+        });
+    });
+
+    document.addEventListener('click', function(event) {
+        if (!event.target.closest('.app-navbar')) {
+            closeSubmenus();
+        }
+    });
+
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            closeSubmenus();
+            if (menu && menuButton && window.matchMedia('(max-width: 991.98px)').matches) {
+                menu.classList.remove('is-open');
+                menuButton.setAttribute('aria-expanded', 'false');
+            }
+        }
+    });
+}
+
 // Formulario de registro (para /register)
 function initializeGenerateQRForm() {
     console.log("Inicializando formulario de generación de QR");
@@ -366,6 +417,7 @@ function initializeReportForm() {
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log("DOM cargado, inicializando scripts");
+    initializeAppNavbar();
     if (document.getElementById('qr-video')) {
         initializeQRScanner();
     }

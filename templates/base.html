@@ -44,22 +44,41 @@
                 </span>
             </a>
 
-            <div class="app-navbar-menu" id="navbarNav">
+            <button class="app-menu-toggle" type="button" data-menu-toggle aria-controls="navbarNav" aria-expanded="false">
+                Menu
+            </button>
+
+            <div class="app-navbar-menu" id="navbarNav" data-nav-menu>
                 {% if current_user.is_authenticated %}
                     {% if current_user.role == 'admin' %}
                     <a class="app-nav-link" href="{{ url_for('admin_dashboard') }}">Dashboard</a>
-                    <a class="app-nav-link" href="{{ url_for('events') }}">Crear evento</a>
-                    <a class="app-nav-link" href="{{ url_for('register') }}">Anadir participante</a>
-                    <a class="app-nav-link" href="{{ url_for('scan') }}">Escanear</a>
-                    <a class="app-nav-link" href="{{ url_for('data') }}">Participantes</a>
-                    <a class="app-nav-link" href="{{ url_for('create_user') }}">Crear usuario</a>
-                    <a class="app-nav-link" href="{{ url_for('reports') }}">Reportes</a>
-                    <a class="app-nav-link" href="{{ url_for('settings') }}">Configuracion</a>
+                    <div class="app-nav-group">
+                        <button class="app-nav-link app-nav-trigger" type="button" data-submenu-toggle aria-expanded="false">Eventos</button>
+                        <div class="app-submenu">
+                            <a class="app-submenu-link" href="{{ url_for('events') }}">Crear evento</a>
+                            <a class="app-submenu-link" href="{{ url_for('register') }}">Anadir participante</a>
+                            <a class="app-submenu-link" href="{{ url_for('data') }}">Participantes</a>
+                        </div>
+                    </div>
+                    <a class="app-nav-link app-nav-primary" href="{{ url_for('scan') }}">Escanear</a>
+                    <div class="app-nav-group">
+                        <button class="app-nav-link app-nav-trigger" type="button" data-submenu-toggle aria-expanded="false">Administracion</button>
+                        <div class="app-submenu">
+                            <a class="app-submenu-link" href="{{ url_for('create_user') }}">Crear usuario</a>
+                            <a class="app-submenu-link" href="{{ url_for('reports') }}">Reportes</a>
+                            <a class="app-submenu-link" href="{{ url_for('settings') }}">Configuracion</a>
+                        </div>
+                    </div>
                     {% elif current_user.role == 'staff' %}
                     <a class="app-nav-link" href="{{ url_for('staff_dashboard') }}">Dashboard</a>
-                    <a class="app-nav-link" href="{{ url_for('scan') }}">Escanear</a>
-                    <a class="app-nav-link" href="{{ url_for('data') }}">Participantes</a>
-                    <a class="app-nav-link" href="{{ url_for('reports') }}">Reportes</a>
+                    <a class="app-nav-link app-nav-primary" href="{{ url_for('scan') }}">Escanear</a>
+                    <div class="app-nav-group">
+                        <button class="app-nav-link app-nav-trigger" type="button" data-submenu-toggle aria-expanded="false">Consultas</button>
+                        <div class="app-submenu">
+                            <a class="app-submenu-link" href="{{ url_for('data') }}">Participantes</a>
+                            <a class="app-submenu-link" href="{{ url_for('reports') }}">Reportes</a>
+                        </div>
+                    </div>
                     {% else %}
                     <a class="app-nav-link" href="{{ url_for('guest_dashboard') }}">Dashboard</a>
                     {% endif %}
