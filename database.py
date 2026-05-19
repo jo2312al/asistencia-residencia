@@ -142,6 +142,21 @@ class DatabaseManager:
             FOREIGN KEY (credential_id) REFERENCES credentials(id),
             FOREIGN KEY (legacy_attendance_id) REFERENCES attendance(id),
             FOREIGN KEY (event_id) REFERENCES events(id))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS event_templates (
+            event_id INT PRIMARY KEY,
+            email_subject VARCHAR(255),
+            email_body TEXT,
+            credential_style VARCHAR(50) NOT NULL DEFAULT 'standard',
+            logo_filename VARCHAR(255),
+            updated_at DATETIME NOT NULL,
+            FOREIGN KEY (event_id) REFERENCES events(id))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS user_event_permissions (
+            username VARCHAR(50) NOT NULL,
+            event_id INT NOT NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY (username, event_id),
+            FOREIGN KEY (username) REFERENCES users(username),
+            FOREIGN KEY (event_id) REFERENCES events(id))''')
         c.execute("""
             SELECT COUNT(*)
             FROM information_schema.COLUMNS
@@ -553,6 +568,78 @@ class DatabaseManager:
             "attendance": attendance,
             "credentials": credentials,
         }
+
+    def get_event_template(self, event_id):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor(dictionary=True)
+        c.execute(
+            """SELECT event_id, email_subject, email_body, credential_style, logo_filename, updated_at
+               FROM event_templates
+               WHERE event_id = %s""",
+            (event_id,)
+        )
+        template = c.fetchone()
+        conn.close()
+        if template:
+            return template
+        return {
+            "event_id": event_id,
+            "email_subject": "Credenciales para {event_name}",
+            "email_body": (
+                "Hola,\n\nAdjuntamos las credenciales para {event_name}.\n\n"
+                "Participantes:\n{participant_list}\n\n"
+                "Presenten el QR al momento del registro de asistencia.\n"
+            ),
+            "credential_style": "standard",
+            "logo_filename": "asistec.webp",
+            "updated_at": None,
+        }
+
+    def save_event_template(self, event_id, email_subject, email_body, credential_style='standard', logo_filename=None):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        now = datetime.now()
+        c.execute(
+            """INSERT INTO event_templates
+               (event_id, email_subject, email_body, credential_style, logo_filename, updated_at)
+               VALUES (%s, %s, %s, %s, %s, %s)
+               ON DUPLICATE KEY UPDATE
+                   email_subject = VALUES(email_subject),
+                   email_body = VALUES(email_body),
+                   credential_style = VALUES(credential_style),
+                   logo_filename = VALUES(logo_filename),
+                   updated_at = VALUES(updated_at)""",
+            (event_id, email_subject, email_body, credential_style or 'standard', logo_filename or None, now)
+        )
+        conn.commit()
+        conn.close()
+
+    def get_user_event_permissions(self, username):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """SELECT event_id
+               FROM user_event_permissions
+               WHERE username = %s""",
+            (username,)
+        )
+        event_ids = [row[0] for row in c.fetchall()]
+        conn.close()
+        return event_ids
+
+    def set_user_event_permissions(self, username, event_ids):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute("DELETE FROM user_event_permissions WHERE username = %s", (username,))
+        now = datetime.now()
+        for event_id in event_ids:
+            c.execute(
+                """INSERT INTO user_event_permissions (username, event_id, created_at)
+                   VALUES (%s, %s, %s)""",
+                (username, event_id, now)
+            )
+        conn.commit()
+        conn.close()
 
     def get_credential_by_token(self, token):
         conn = mysql.connector.connect(**self.db_config)

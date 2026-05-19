@@ -43,13 +43,13 @@ class AttendanceManager:
         conn.close()
         return "Asistencia registrada exitosamente"
 
-    def register_attendance_by_qr_data(self, qr_data, event_id=None):
+    def register_attendance_by_qr_data(self, qr_data, event_id=None, event_type='entrada'):
         try:
             credential = self.db_manager.get_credential_by_token(qr_data)
         except Exception:
             credential = None
         if not credential:
-            return self.register_attendance_by_matricula(qr_data, event_id)
+            return self.register_attendance_by_matricula(qr_data, event_id, event_type)
 
         if credential['credential_status'] != 'active' or credential['participant_status'] != 'active':
             return "Credencial inactiva"
@@ -74,7 +74,7 @@ class AttendanceManager:
                 credential['participant_id'],
                 credential['credential_id'],
                 attendance_id,
-                'entrada',
+                event_type or 'entrada',
                 now_mx,
                 event_id
             )
@@ -84,7 +84,7 @@ class AttendanceManager:
                 conn.close()
             return f"Error al registrar asistencia: {str(e)}"
 
-    def register_attendance_by_matricula(self, matricula, event_id=None):
+    def register_attendance_by_matricula(self, matricula, event_id=None, event_type='entrada'):
         try:
             conn = mysql.connector.connect(**self.db_manager.db_config)
             cursor = conn.cursor(dictionary=True)
@@ -124,7 +124,7 @@ class AttendanceManager:
                         db_credential['participant_id'] if db_credential else None,
                         db_credential['credential_id'] if db_credential else None,
                         attendance_id,
-                        'entrada',
+                        event_type or 'entrada',
                         now_mx,
                         event_id
                     )

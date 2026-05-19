@@ -65,10 +65,12 @@ function registerAttendance(qrData) {
     console.log("Registrando asistencia para QR:", qrData);
     const eventSelector = document.getElementById('event_id');
     const eventId = eventSelector ? eventSelector.value : '';
+    const eventTypeSelector = document.getElementById('attendance_event_type');
+    const eventType = eventTypeSelector ? eventTypeSelector.value : 'entrada';
     fetch('/register_attendance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qr_data: qrData, event_id: eventId })
+        body: JSON.stringify({ qr_data: qrData, event_id: eventId, event_type: eventType })
     })
     .then(response => {
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -392,6 +394,33 @@ function initializeExcelUploadForm() {
     }
 }
 
+function initializeExcelPreview() {
+    const button = document.getElementById('preview-excel-btn');
+    const form = document.getElementById('excel-form');
+    const resultContainer = document.getElementById('excel-preview-result');
+    if (!button || !form || !resultContainer) return;
+
+    button.addEventListener('click', async function() {
+        const formData = new FormData(form);
+        try {
+            const response = await fetch('/preview_excel', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            if (!result.success) {
+                resultContainer.innerHTML = `<p class="text-danger">Error: ${escapeHtml(result.error)}</p>`;
+                return;
+            }
+            const missing = result.missing.length ? `<p class="text-danger">Faltan columnas: ${result.missing.map(escapeHtml).join(', ')}</p>` : '<p class="text-success">Columnas base completas.</p>';
+            const columns = result.columns.map(escapeHtml).join(', ');
+            resultContainer.innerHTML = `${missing}<p class="small text-muted mb-1">Filas detectadas: ${result.row_count}</p><p class="small text-muted">Columnas: ${columns}</p>`;
+        } catch (error) {
+            resultContainer.innerHTML = `<p class="text-danger">Error: ${escapeHtml(error.message)}</p>`;
+        }
+    });
+}
+
 // Formulario de reportes (para /dashboard o /reports)
 function initializeReportForm() {
     console.log("Inicializando formulario de reportes");
@@ -436,6 +465,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     if (document.getElementById('excel-form')) {
         initializeExcelUploadForm();
+        initializeExcelPreview();
     }
     if (document.getElementById('report-form')) {
         initializeReportForm();

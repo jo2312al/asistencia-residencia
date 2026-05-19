@@ -95,8 +95,12 @@
                 <div class="col-lg-1">
                     <button type="submit" class="btn tecn-blue text-white w-100">Cargar</button>
                 </div>
+                <div class="col-12">
+                    <button type="button" class="btn btn-outline-primary" id="preview-excel-btn">Previsualizar Excel {{ tip('Revisa columnas y numero de filas antes de importar.') }}</button>
+                </div>
             </div>
         </form>
+        <div id="excel-preview-result" class="mt-3"></div>
         <div id="excel-result" class="mt-3"></div>
     </div>
 </div>

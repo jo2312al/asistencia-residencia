@@ -9,6 +9,7 @@ from email.message import EmailMessage
 from functools import wraps
 
 import mysql.connector
+import pandas as pd
 import xlsxwriter
 from dotenv import load_dotenv
 from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, url_for
@@ -413,6 +414,23 @@ def inject_template_helpers():
     return {"VALID_ROLES": VALID_ROLES, "ROLE_LABELS": ROLE_LABELS}
 
 
+def render_text_template(template, **values):
+    text = template or ""
+    for key, value in values.items():
+        text = text.replace("{" + key + "}", str(value or ""))
+    return text
+
+
+def filter_events_for_current_user(events):
+    if not current_user.is_authenticated or current_user.role == "admin":
+        return events
+    allowed = db_manager.get_user_event_permissions(current_user.id)
+    if not allowed:
+        return events
+    allowed_set = set(allowed)
+    return [event for event in events if event[0] in allowed_set]
+
+
 @login_manager.user_loader
 def load_user(username):
     user_data = db_manager.get_user(username)
@@ -516,7 +534,14 @@ def create_user():
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 500
     users = db_manager.get_all_users()
-    return render_template("create_user.html", roles=VALID_ROLES, users=users)
+    event_permissions = {user[0]: db_manager.get_user_event_permissions(user[0]) for user in users}
+    return render_template(
+        "create_user.html",
+        roles=VALID_ROLES,
+        users=users,
+        events=db_manager.get_all_events(),
+        event_permissions=event_permissions,
+    )
 
 
 @app.route("/users/<path:username>/role", methods=["POST"])
@@ -543,6 +568,22 @@ def update_user_role(username):
         return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/users/<path:username>/events", methods=["POST"])
+@login_required
+@role_required("admin")
+def update_user_events(username):
+    if not db_manager.get_user(username):
+        flash("Usuario no encontrado", "warning")
+        return redirect(url_for("create_user"))
+    event_ids = [int(event_id) for event_id in request.form.getlist("event_ids") if event_id.isdigit()]
+    try:
+        db_manager.set_user_event_permissions(username, event_ids)
+        flash("Permisos por evento actualizados", "success")
+    except Exception as e:
+        flash(str(e), "danger")
+    return redirect(url_for("create_user"))
 
 
 def normalize_datetime_input(value):
@@ -787,6 +828,7 @@ def settings():
         selected_event=selected_event,
         selected_event_id=selected_event_id,
         event_fields=event_fields,
+        event_template=db_manager.get_event_template(selected_event_id) if selected_event else None,
         mail_status=mail_status,
         system_info={
             "app_name": "AsisTec",
@@ -846,6 +888,28 @@ def update_event_rules():
     try:
         updated = db_manager.update_event_rules(event_id, duplicate_policy, status)
         flash("Reglas actualizadas" if updated else "Evento no encontrado", "success" if updated else "warning")
+    except Exception as e:
+        flash(str(e), "danger")
+    return redirect(url_for("settings", event_id=event_id))
+
+
+@app.route("/settings/event-template", methods=["POST"])
+@login_required
+@role_required("admin")
+def update_event_template():
+    event_id = request.form.get("event_id", type=int)
+    if not event_id or not db_manager.get_event(event_id):
+        flash("Selecciona un evento valido para guardar plantilla", "danger")
+        return redirect(url_for("settings"))
+    try:
+        db_manager.save_event_template(
+            event_id,
+            (request.form.get("email_subject") or "").strip() or "Credenciales para {event_name}",
+            request.form.get("email_body") or "",
+            request.form.get("credential_style") or "standard",
+            (request.form.get("logo_filename") or "").strip() or None,
+        )
+        flash("Plantilla actualizada", "success")
     except Exception as e:
         flash(str(e), "danger")
     return redirect(url_for("settings", event_id=event_id))
@@ -917,7 +981,7 @@ def event_projects_api(event_id):
 @login_required
 @role_required("admin", "staff")
 def scan():
-    return render_template("scan.html", events=db_manager.get_active_events())
+    return render_template("scan.html", events=filter_events_for_current_user(db_manager.get_active_events()))
 
 
 @app.route("/reports")
@@ -925,7 +989,7 @@ def scan():
 @role_required("admin", "staff")
 def reports():
     projects = db_manager.get_all_projects()
-    events = db_manager.get_all_events()
+    events = filter_events_for_current_user(db_manager.get_all_events())
     return render_template("reports.html", projects=projects, events=events)
 
 
@@ -942,7 +1006,7 @@ def data():
     per_page = 10
 
     projects = db_manager.get_all_projects()
-    events = db_manager.get_all_events()
+    events = filter_events_for_current_user(db_manager.get_all_events())
     selected_event = db_manager.get_event(event_id_filter) if event_id_filter else None
     projects = db_manager.get_projects_by_event(event_id_filter) if event_id_filter else []
     all_students = []
@@ -1208,7 +1272,8 @@ def send_event_credentials():
 
     sent_count = 0
     error_count = 0
-    subject = f"Credenciales para {event[1]}"
+    template = db_manager.get_event_template(event_id)
+    subject = render_text_template(template["email_subject"], event_name=event[1])
     for batch in batches:
         attachments = []
         credential_ids = []
@@ -1220,10 +1285,11 @@ def send_event_credentials():
                 credential_ids.append(row["credential_id"])
 
         names = "\n".join(f"- {row['full_name']}" for row in batch["rows"])
-        body = (
-            f"Hola,\n\nAdjuntamos las credenciales para {event[1]}.\n\n"
-            f"Participantes:\n{names}\n\n"
-            "Presenten el QR al momento del registro de asistencia.\n"
+        body = render_text_template(
+            template["email_body"],
+            event_name=event[1],
+            participant_list=names,
+            recipient=batch["recipient"],
         )
         try:
             send_mail(batch["recipient"], subject, body, attachments)
@@ -1353,6 +1419,29 @@ def upload_excel():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/preview_excel", methods=["POST"])
+@login_required
+@role_required("admin", api=True)
+def preview_excel():
+    try:
+        file = request.files.get("excel_file") or request.files.get("file")
+        if not file or file.filename == "":
+            return jsonify({"success": False, "error": "Selecciona un archivo Excel"}), 400
+        df = pd.read_excel(file)
+        required = ['first_name', 'last_name_p', 'last_name_m', 'matricula', 'carrera']
+        missing = [column for column in required if column not in df.columns]
+        rows = df.head(5).fillna("").to_dict(orient="records")
+        return jsonify({
+            "success": True,
+            "columns": list(df.columns),
+            "missing": missing,
+            "row_count": len(df.index),
+            "preview": rows,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/register_attendance", methods=["POST"])
 @login_required
 @role_required("admin", "staff", api=True)
@@ -1368,7 +1457,8 @@ def register_attendance():
             event_id = int(event_id) if event_id else None
         except (TypeError, ValueError):
             event_id = None
-        result = attendance_manager.register_attendance_by_qr_data(qr_data, event_id)
+        event_type = data.get("event_type") or "entrada"
+        result = attendance_manager.register_attendance_by_qr_data(qr_data, event_id, event_type)
         if result == "Asistencia registrada exitosamente":
             return jsonify({"success": True, "message": result})
         if result == "Este alumno ya fue tomado asistencia":

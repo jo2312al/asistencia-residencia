@@ -151,11 +151,33 @@
                 <h2 class="h5 mb-0">Plantillas {{ tip('Aqui se centralizara el diseno de credenciales y mensajes de correo por evento.') }}</h2>
             </div>
             <div class="card-body">
-                <p class="text-muted">Espacio reservado para plantillas de credencial y correo por evento.</p>
-                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <strong>Credencial:</strong> plantilla estandar<br>
-                    <strong>Correo:</strong> credencial de participante
-                </div>
+                {% if selected_event and event_template %}
+                <form method="POST" action="{{ url_for('update_event_template') }}">
+                    <input type="hidden" name="event_id" value="{{ selected_event[0] }}">
+                    <div class="mb-3">
+                        <label for="email_subject" class="form-label">Asunto {{ tip('Puedes usar {event_name}.') }}</label>
+                        <input type="text" class="form-control" id="email_subject" name="email_subject" value="{{ event_template.email_subject }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="email_body" class="form-label">Cuerpo {{ tip('Variables disponibles: {event_name}, {participant_list}, {recipient}.') }}</label>
+                        <textarea class="form-control" id="email_body" name="email_body" rows="5">{{ event_template.email_body }}</textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="credential_style" class="form-label">Credencial</label>
+                        <select class="form-select" id="credential_style" name="credential_style">
+                            <option value="standard" {% if event_template.credential_style == 'standard' %}selected{% endif %}>Estandar</option>
+                            <option value="rectangular" {% if event_template.credential_style == 'rectangular' %}selected{% endif %}>Rectangular</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="logo_filename" class="form-label">Logo</label>
+                        <input type="text" class="form-control" id="logo_filename" name="logo_filename" value="{{ event_template.logo_filename or '' }}" placeholder="asistec.webp">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Guardar plantilla</button>
+                </form>
+                {% else %}
+                <p class="mb-0 text-muted">Selecciona un evento para editar plantillas.</p>
+                {% endif %}
             </div>
         </div>
     </div>
