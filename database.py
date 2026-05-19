@@ -496,6 +496,64 @@ class DatabaseManager:
         conn.close()
         return rows
 
+    def get_event_email_logs(self, event_id, limit=25):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """SELECT id, recipient, subject, status, error, created_at
+               FROM email_logs
+               WHERE event_id = %s
+               ORDER BY created_at DESC
+               LIMIT %s""",
+            (event_id, int(limit))
+        )
+        logs = c.fetchall()
+        conn.close()
+        return logs
+
+    def get_event_attendance_events(self, event_id, limit=25):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """SELECT ae.id, ae.event_type, ae.timestamp, p.full_name, s.matricula, pr.name
+               FROM attendance_events ae
+               LEFT JOIN participants p ON ae.participant_id = p.id
+               LEFT JOIN students s ON p.legacy_student_id = s.id
+               LEFT JOIN projects pr ON p.project_id = pr.id
+               WHERE ae.event_id = %s
+               ORDER BY ae.timestamp DESC
+               LIMIT %s""",
+            (event_id, int(limit))
+        )
+        rows = c.fetchall()
+        conn.close()
+        return rows
+
+    def get_event_counts(self, event_id):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM students WHERE event_id = %s", (event_id,))
+        participants = c.fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM projects WHERE event_id = %s", (event_id,))
+        projects = c.fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM attendance_events WHERE event_id = %s", (event_id,))
+        attendance = c.fetchone()[0]
+        c.execute(
+            """SELECT COUNT(*)
+               FROM credentials c
+               JOIN participants p ON c.participant_id = p.id
+               WHERE p.event_id = %s""",
+            (event_id,)
+        )
+        credentials = c.fetchone()[0]
+        conn.close()
+        return {
+            "participants": participants,
+            "projects": projects,
+            "attendance": attendance,
+            "credentials": credentials,
+        }
+
     def get_credential_by_token(self, token):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor(dictionary=True)
@@ -639,6 +697,32 @@ class DatabaseManager:
         event = c.fetchone()
         conn.close()
         return event
+
+    def update_event(self, event_id, name, description=None, start_datetime=None, end_datetime=None,
+                     location=None, status='active', event_type='general', duplicate_policy='once_per_day'):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """UPDATE events
+               SET name = %s, description = %s, start_datetime = %s, end_datetime = %s,
+                   location = %s, status = %s, event_type = %s, duplicate_policy = %s
+               WHERE id = %s""",
+            (
+                name,
+                description,
+                start_datetime or None,
+                end_datetime or None,
+                location,
+                status or 'active',
+                event_type or 'general',
+                duplicate_policy or 'once_per_day',
+                event_id,
+            )
+        )
+        conn.commit()
+        updated = c.rowcount
+        conn.close()
+        return updated > 0
 
     def get_latest_event(self):
         conn = mysql.connector.connect(**self.db_config)
@@ -894,6 +978,47 @@ class DatabaseManager:
         student = c.fetchone()
         conn.close()
         return student
+
+    def get_student_by_id(self, student_id):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor(dictionary=True)
+        c.execute(
+            """SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
+                      s.project_id, s.event_id, p.id AS participant_id, p.email, p.participant_type,
+                      pr.name AS project_name
+               FROM students s
+               LEFT JOIN participants p ON p.legacy_student_id = s.id
+               LEFT JOIN projects pr ON s.project_id = pr.id
+               WHERE s.id = %s""",
+            (student_id,)
+        )
+        student = c.fetchone()
+        conn.close()
+        return student
+
+    def update_student_participant(self, student_id, first_name, last_name_p, last_name_m, matricula,
+                                   carrera, project_id=None, email=None, participant_type='alumno'):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        c.execute(
+            """UPDATE students
+               SET first_name = %s, last_name_p = %s, last_name_m = %s,
+                   matricula = %s, carrera = %s, project_id = %s
+               WHERE id = %s""",
+            (first_name, last_name_p, last_name_m, matricula, carrera, project_id or None, student_id)
+        )
+        full_name = f"{first_name} {last_name_p} {last_name_m}".strip()
+        c.execute(
+            """UPDATE participants
+               SET full_name = %s, email = %s, participant_type = %s,
+                   project_id = %s, updated_at = %s
+               WHERE legacy_student_id = %s""",
+            (full_name, email or None, participant_type or 'alumno', project_id or None, datetime.now(), student_id)
+        )
+        conn.commit()
+        updated = c.rowcount
+        conn.close()
+        return updated > 0
 
     def upload_students_from_excel(self, file, project_id, event_id=None):
         df = pd.read_excel(file)

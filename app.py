@@ -612,6 +612,115 @@ def create_event():
     return redirect(url_for("events"))
 
 
+@app.route("/events/<int:event_id>")
+@login_required
+@role_required("admin")
+def event_detail(event_id):
+    event = db_manager.get_event(event_id)
+    if not event:
+        flash("Evento no encontrado", "warning")
+        return redirect(url_for("events" if current_user.role == "admin" else "staff_dashboard"))
+
+    participants = db_manager.get_all_students_filtered(event_id_filter=event_id)
+    custom_values = db_manager.get_field_values_by_student_ids([student[0] for student in participants])
+    projects = db_manager.get_projects_by_event(event_id)
+    project_names = {project[0]: project[1] for project in projects}
+    participant_rows = []
+    for student in participants:
+        detail = db_manager.get_student_by_id(student[0]) or {}
+        participant_rows.append({
+            "id": student[0],
+            "first_name": student[1],
+            "last_name_p": student[2],
+            "last_name_m": student[3],
+            "matricula": student[4],
+            "carrera": student[5],
+            "project_id": student[6],
+            "event_id": student[7],
+            "participant_type": student[8],
+            "project_name": project_names.get(student[6], "Sin proyecto"),
+            "email": detail.get("email") or "",
+            "custom_fields": custom_values.get(student[0], []),
+        })
+
+    return render_template(
+        "event_detail.html",
+        event=event,
+        projects=projects,
+        participants=participant_rows,
+        counts=db_manager.get_event_counts(event_id),
+        email_logs=db_manager.get_event_email_logs(event_id),
+        attendance_events=db_manager.get_event_attendance_events(event_id),
+    )
+
+
+@app.route("/events/<int:event_id>/edit", methods=["POST"])
+@login_required
+@role_required("admin")
+def update_event(event_id):
+    name = (request.form.get("name") or "").strip()
+    if not name:
+        flash("Nombre del evento requerido", "danger")
+        return redirect(url_for("event_detail", event_id=event_id))
+
+    try:
+        updated = db_manager.update_event(
+            event_id,
+            name,
+            (request.form.get("description") or "").strip() or None,
+            normalize_datetime_input(request.form.get("start_datetime")),
+            normalize_datetime_input(request.form.get("end_datetime")),
+            (request.form.get("location") or "").strip() or None,
+            request.form.get("status") or "active",
+            request.form.get("event_type") or "general",
+            request.form.get("duplicate_policy") or "once_per_day",
+        )
+        flash("Evento actualizado" if updated else "Evento sin cambios", "success")
+    except Exception as e:
+        flash(str(e), "danger")
+    return redirect(url_for("event_detail", event_id=event_id))
+
+
+@app.route("/participants/<path:student_id>/edit", methods=["POST"])
+@login_required
+@role_required("admin")
+def update_participant(student_id):
+    student = db_manager.get_student_by_id(student_id)
+    if not student:
+        flash("Participante no encontrado", "warning")
+        return redirect(url_for("data"))
+
+    event_id = student.get("event_id")
+    project_id = request.form.get("project_id") or None
+    try:
+        if project_id:
+            valid_project_ids = {str(project[0]) for project in db_manager.get_projects_by_event(event_id)}
+            if str(project_id) not in valid_project_ids:
+                flash("Proyecto no pertenece al evento", "danger")
+                return redirect(url_for("event_detail", event_id=event_id))
+
+        db_manager.update_student_participant(
+            student_id,
+            (request.form.get("first_name") or "").strip(),
+            (request.form.get("last_name_p") or "").strip(),
+            (request.form.get("last_name_m") or "").strip(),
+            (request.form.get("matricula") or "").strip(),
+            (request.form.get("carrera") or "").strip(),
+            project_id,
+            (request.form.get("email") or "").strip() or None,
+            request.form.get("participant_type") or "alumno",
+        )
+        flash("Participante actualizado", "success")
+    except mysql.connector.Error as e:
+        if e.errno == 1062:
+            flash("La matricula ya existe en otro participante", "danger")
+        else:
+            flash("Error al actualizar participante", "danger")
+    except Exception as e:
+        flash(str(e), "danger")
+    return redirect(url_for("event_detail", event_id=event_id))
+
+
 @app.route("/projects", methods=["POST"])
 @login_required
 @role_required("admin")

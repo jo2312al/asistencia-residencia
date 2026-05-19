@@ -27,6 +27,7 @@
             <div class="col-lg-5 text-lg-end">
                 <a class="btn btn-outline-primary" href="{{ url_for('data') }}">Ver participantes por evento</a>
                 <a class="btn tecn-blue text-white ms-lg-2" href="{{ url_for('data', event_id=latest_event[0]) }}">Abrir este evento</a>
+                <a class="btn btn-outline-primary ms-lg-2" href="{{ url_for('event_detail', event_id=latest_event[0]) }}">Detalle</a>
             </div>
         </div>
     </div>

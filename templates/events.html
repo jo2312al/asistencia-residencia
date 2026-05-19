@@ -139,7 +139,10 @@
                                 <td>{{ event[7] }}</td>
                                 <td>{{ event[3] or 'Sin fecha' }}</td>
                                 <td>{{ event[6] }}</td>
-                                <td>{{ event[5] or 'Sin lugar' }}</td>
+                                <td>
+                                    {{ event[5] or 'Sin lugar' }}<br>
+                                    <a class="small" href="{{ url_for('event_detail', event_id=event[0]) }}">Ver detalle</a>
+                                </td>
                             </tr>
                             {% else %}
                             <tr>
