@@ -411,7 +411,11 @@ def role_required(*roles, api=False):
 
 @app.context_processor
 def inject_template_helpers():
-    return {"VALID_ROLES": VALID_ROLES, "ROLE_LABELS": ROLE_LABELS}
+    return {
+        "VALID_ROLES": VALID_ROLES,
+        "ROLE_LABELS": ROLE_LABELS,
+        "datetime_local_value": datetime_local_value,
+    }
 
 
 def render_text_template(template, **values):
@@ -419,6 +423,14 @@ def render_text_template(template, **values):
     for key, value in values.items():
         text = text.replace("{" + key + "}", str(value or ""))
     return text
+
+
+def datetime_local_value(value):
+    if not value:
+        return ""
+    if hasattr(value, "strftime"):
+        return value.strftime("%Y-%m-%dT%H:%M")
+    return str(value).replace(" ", "T")[:16]
 
 
 def filter_events_for_current_user(events):
@@ -684,14 +696,32 @@ def event_detail(event_id):
             "custom_fields": custom_values.get(student[0], []),
         })
 
+    try:
+        counts = db_manager.get_event_counts(event_id)
+    except Exception:
+        counts = {
+            "participants": len(participant_rows),
+            "projects": len(projects),
+            "attendance": 0,
+            "credentials": 0,
+        }
+    try:
+        email_logs = db_manager.get_event_email_logs(event_id)
+    except Exception:
+        email_logs = []
+    try:
+        attendance_events = db_manager.get_event_attendance_events(event_id)
+    except Exception:
+        attendance_events = []
+
     return render_template(
         "event_detail.html",
         event=event,
         projects=projects,
         participants=participant_rows,
-        counts=db_manager.get_event_counts(event_id),
-        email_logs=db_manager.get_event_email_logs(event_id),
-        attendance_events=db_manager.get_event_attendance_events(event_id),
+        counts=counts,
+        email_logs=email_logs,
+        attendance_events=attendance_events,
     )
 
 
