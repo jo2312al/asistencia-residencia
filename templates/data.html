@@ -2,16 +2,6 @@
 {% from '_help.html' import tip %}
 {% block title %}Participantes{% endblock %}
 {% block content %}
-{% macro sort_link(key, label) -%}
-    {% set next_dir = 'desc' if sort_by == key and sort_dir == 'asc' else 'asc' %}
-    <a class="text-slate-900 text-decoration-none" href="{{ url_for('data', page=1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=key, dir=next_dir) }}">
-        {{ label }}
-        {% if sort_by == key %}
-            <span aria-hidden="true">{{ '▲' if sort_dir == 'asc' else '▼' }}</span>
-        {% endif %}
-    </a>
-{%- endmacro %}
-
 <section class="mb-6">
     <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Credenciales</p>
     <h1 class="tecn-blue-text !mb-1">Participantes {{ tip('La lista siempre se consulta por evento para no mezclar credenciales ni envios.') }}</h1>
@@ -92,13 +82,13 @@
             <table class="table table-striped align-middle">
                 <thead>
                     <tr>
-                        <th scope="col">{{ sort_link('matricula', 'Matricula') }}</th>
-                        <th scope="col">{{ sort_link('nombre', 'Nombre') }}</th>
-                        <th scope="col">{{ sort_link('apellido_p', 'Apellido P') }}</th>
-                        <th scope="col">{{ sort_link('apellido_m', 'Apellido M') }}</th>
-                        <th scope="col">{{ sort_link('carrera', 'Carrera') }}</th>
-                        <th scope="col">{{ sort_link('tipo', 'Tipo') }}</th>
-                        <th scope="col">{{ sort_link('proyecto', 'Proyecto') }}</th>
+                        <th scope="col">Matricula</th>
+                        <th scope="col">Nombre</th>
+                        <th scope="col">Apellido P</th>
+                        <th scope="col">Apellido M</th>
+                        <th scope="col">Carrera</th>
+                        <th scope="col">Tipo</th>
+                        <th scope="col">Proyecto</th>
                         <th scope="col">Datos adicionales</th>
                         <th scope="col">QR</th>
                     </tr>
@@ -150,23 +140,19 @@
         <nav aria-label="Paginacion de participantes">
             <ul class="pagination justify-content-center">
                 <li class="page-item {% if page == 1 %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('data', page=page-1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir) }}" aria-label="Anterior">
+                    <a class="page-link" href="{{ url_for('data', page=page-1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter) }}" aria-label="Anterior">
                         <span aria-hidden="true">&laquo;</span>
                     </a>
                 </li>
 
                 {% for p in range(1, total_pages + 1) %}
-                    {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
-                        <li class="page-item {% if p == page %}active{% endif %}">
-                            <a class="page-link" href="{{ url_for('data', page=p, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir) }}">{{ p }}</a>
-                        </li>
-                    {% elif p == page - 3 or p == page + 3 %}
-                        <li class="page-item disabled"><span class="page-link">...</span></li>
-                    {% endif %}
+                    <li class="page-item {% if p == page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('data', page=p, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter) }}">{{ p }}</a>
+                    </li>
                 {% endfor %}
 
                 <li class="page-item {% if page == total_pages %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('data', page=page+1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir) }}" aria-label="Siguiente">
+                    <a class="page-link" href="{{ url_for('data', page=page+1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter) }}" aria-label="Siguiente">
                         <span aria-hidden="true">&raquo;</span>
                     </a>
                 </li>

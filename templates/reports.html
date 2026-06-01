@@ -56,7 +56,8 @@
                 method: 'POST',
                 body: formData
             });
-            const result = await readJsonResponse(response);
+            if (!response.ok) throw new Error('Error en el servidor');
+            const result = await response.json();
             const resultContainer = document.getElementById('report-result');
             if (result.success) {
                 resultContainer.innerHTML = `<p class="text-success">Reporte generado: <a href="${result.report_path}" download>Descargar</a></p>`;

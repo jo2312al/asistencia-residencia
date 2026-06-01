@@ -101,7 +101,7 @@
                 method: 'POST',
                 body: formData
             });
-            const result = await readJsonResponse(response);
+            const result = await response.json();
             const resultContainer = document.getElementById('create-user-result');
             if (result.success) {
                 resultContainer.innerHTML = `<p class="text-success">${result.message}</p>`;
@@ -127,7 +127,7 @@
                     method: 'POST',
                     body: formData
                 });
-                const result = await readJsonResponse(response);
+                const result = await response.json();
                 if (result.success) {
                     resultContainer.innerHTML = `<p class="text-success">${result.message}</p>`;
                 } else {

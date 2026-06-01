@@ -1087,13 +1087,6 @@ def data():
     apellido_p_search = request.args.get("apellido_p", "").strip()
     project_id_filter = request.args.get("project_id", "")
     event_id_filter = request.args.get("event_id", "")
-    sort_by = request.args.get("sort", "proyecto")
-    sort_dir = request.args.get("dir", "asc")
-    allowed_sorts = {"matricula", "nombre", "apellido_p", "apellido_m", "carrera", "tipo", "proyecto"}
-    if sort_by not in allowed_sorts:
-        sort_by = "proyecto"
-    if sort_dir not in {"asc", "desc"}:
-        sort_dir = "asc"
 
     page = request.args.get("page", 1, type=int)
     per_page = 10
@@ -1103,32 +1096,20 @@ def data():
     selected_event = db_manager.get_event(event_id_filter) if event_id_filter else None
     projects = db_manager.get_projects_by_event(event_id_filter) if event_id_filter else []
     all_students = []
-    total_students = 0
-    if event_id_filter:
-        total_students = db_manager.count_students_filtered(
-            matricula_search,
-            apellido_p_search,
-            project_id_filter,
-            event_id_filter,
-        )
-
-    total_pages = max((total_students + per_page - 1) // per_page, 1)
-    page = max(1, min(page, total_pages))
-
-    start = (page - 1) * per_page
     if event_id_filter:
         all_students = db_manager.get_all_students_filtered(
             matricula_search,
             apellido_p_search,
             project_id_filter,
             event_id_filter,
-            sort_by,
-            sort_dir,
-            per_page,
-            start,
         )
 
-    students_paginated = all_students
+    total_students = len(all_students)
+    total_pages = (total_students + per_page - 1) // per_page
+
+    start = (page - 1) * per_page
+    end = start + per_page
+    students_paginated = all_students[start:end]
     custom_values_by_student = db_manager.get_field_values_by_student_ids([student[0] for student in students_paginated])
 
     students_with_qr = []
@@ -1153,7 +1134,7 @@ def data():
             "project_id": student[6],
             "event_id": student[7] if len(student) > 7 else None,
             "participant_type": student[8] if len(student) > 8 else "alumno",
-            "project_name": student[9] if len(student) > 9 and student[9] else project_name,
+            "project_name": project_name,
             "credential_token": credential_token or "Legacy",
             "is_legacy_qr": is_legacy_qr,
             "qr_path": qr_path if os.path.exists(qr_path) else None,
@@ -1173,8 +1154,6 @@ def data():
         project_id_filter=project_id_filter,
         event_id_filter=event_id_filter,
         selected_event=selected_event,
-        sort_by=sort_by,
-        sort_dir=sort_dir,
     )
 
 

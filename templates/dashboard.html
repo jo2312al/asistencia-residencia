@@ -47,7 +47,8 @@
                 method: 'POST',
                 body: formData
             });
-            const result = await readJsonResponse(response);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const result = await response.json();
             console.log("Respuesta de /generate_report:", result);  // Depuración
             const resultContainer = document.getElementById('report-result');
             if (result.success) {
