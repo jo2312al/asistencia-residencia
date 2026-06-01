@@ -32,7 +32,7 @@ class DatabaseManager:
             role VARCHAR(20) NOT NULL DEFAULT 'guest')''')
         c.execute('''CREATE TABLE IF NOT EXISTS projects (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(100) UNIQUE NOT NULL,
+            name VARCHAR(100) NOT NULL,
             description TEXT,
             event_id INT NULL)''')
         c.execute('''CREATE TABLE IF NOT EXISTS events (
@@ -178,6 +178,7 @@ class DatabaseManager:
         self._ensure_column(c, 'events', 'duplicate_policy', "VARCHAR(50) NOT NULL DEFAULT 'once_per_day'")
         self._ensure_column(c, 'events', 'created_at', 'DATETIME NULL')
         self._ensure_column(c, 'projects', 'event_id', 'INT NULL')
+        self._ensure_project_event_unique_index(c)
         self._ensure_column(c, 'students', 'event_id', 'INT NULL')
         self._ensure_column(c, 'participants', 'event_id', 'INT NULL')
         self._ensure_column(c, 'participants', 'legacy_student_id', 'VARCHAR(36)')
@@ -205,6 +206,30 @@ class DatabaseManager:
         if self._column_exists(cursor, table_name, column_name):
             return
         cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+
+    def _ensure_project_event_unique_index(self, cursor):
+        cursor.execute("""
+            SELECT INDEX_NAME
+            FROM INFORMATION_SCHEMA.STATISTICS
+            WHERE TABLE_SCHEMA = %s
+              AND TABLE_NAME = 'projects'
+              AND NON_UNIQUE = 0
+              AND INDEX_NAME <> 'PRIMARY'
+            GROUP BY INDEX_NAME
+            HAVING GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) = 'name'
+        """, (self.db_config['database'],))
+        for (index_name,) in cursor.fetchall():
+            cursor.execute(f"ALTER TABLE projects DROP INDEX `{index_name}`")
+
+        cursor.execute("""
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.STATISTICS
+            WHERE TABLE_SCHEMA = %s
+              AND TABLE_NAME = 'projects'
+              AND INDEX_NAME = 'uq_projects_name_event'
+        """, (self.db_config['database'],))
+        if not cursor.fetchone()[0]:
+            cursor.execute("CREATE UNIQUE INDEX uq_projects_name_event ON projects (name, event_id)")
 
     def _column_exists(self, cursor, table_name, column_name):
         cursor.execute("""
@@ -1334,6 +1359,7 @@ class DatabaseManager:
         c = conn.cursor()
         errors = []
         success_count = 0
+        imported_project_ids = set()
         project_fields = []
         event_fields = []
         project_column = next((col for col in ('project_id', 'project_name', 'project', 'proyecto') if col in df.columns), None)
@@ -1385,6 +1411,8 @@ class DatabaseManager:
                             row_project_id = int(raw_project)
                         else:
                             row_project_id = self.get_or_create_project_by_name(raw_project, event_id)
+                if row_project_id:
+                    imported_project_ids.add(row_project_id)
                 row_project_fields = project_fields
                 if row_project_id and row_project_id != project_id:
                     row_project_fields = self.get_project_fields(row_project_id)
@@ -1455,9 +1483,12 @@ class DatabaseManager:
                 errors.append(f"Error en matrícula {matricula}: {str(e)}")
 
         conn.close()
+        project_summary = ""
+        if project_column and imported_project_ids:
+            project_summary = f" Proyectos asociados/creados: {len(imported_project_ids)}."
         if errors:
-            return f"Procesados {success_count} estudiantes. Errores: {', '.join(errors)}"
-        return f"Se procesaron {success_count} estudiantes correctamente"
+            return f"Procesados {success_count} estudiantes.{project_summary} Errores: {', '.join(errors)}"
+        return f"Se procesaron {success_count} estudiantes correctamente.{project_summary}"
 
     def export_attendance_to_excel(self, project_id, start_date, end_date):
         conn = mysql.connector.connect(**self.db_config)
