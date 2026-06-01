@@ -278,6 +278,21 @@ class DatabaseManager:
                 return column
         return None
 
+    def _row_value_for_field(self, row, field_name):
+        if field_name in row.index:
+            return row[field_name]
+
+        normalized_field = self._normalize_field_name(field_name)
+        aliases = {
+            "correo": ("email", "e-mail", "correo electronico", "correo"),
+            "email": ("email", "e-mail", "correo electronico", "correo"),
+        }
+        for alias in aliases.get(normalized_field, ()):
+            for column in row.index:
+                if self._normalize_field_name(column) == alias:
+                    return row[column]
+        return ""
+
     def _read_excel_table(self, file):
         if hasattr(file, "seek"):
             file.seek(0)
@@ -437,6 +452,8 @@ class DatabaseManager:
                     "carrera": current["career"] or current["level"] or "Sin carrera",
                     "project_name": current["project"],
                     "email": email,
+                    "Correo": email,
+                    "Email": email,
                     "participant_type": participant_type,
                     "Folio": current["folio"],
                     "Evento": current["event"],
@@ -1341,7 +1358,12 @@ class DatabaseManager:
             for field in event_fields
             if field[4] and self._normalize_field_name(field[2]) not in self.BASE_REGISTRATION_FIELD_NAMES
         ]
-        missing_dynamic_columns = [name for name in required_dynamic_columns if name not in df.columns]
+        missing_dynamic_columns = [
+            name
+            for name in required_dynamic_columns
+            if self._find_excel_column(df, [name]) is None
+            and self._normalize_field_name(name) not in ("correo", "email")
+        ]
         if missing_dynamic_columns:
             conn.close()
             raise ValueError(
@@ -1371,7 +1393,7 @@ class DatabaseManager:
                     field_id = field[0]
                     field_name = field[2]
                     is_required = bool(field[4])
-                    raw_value = row[field_name] if field_name in df.columns else ""
+                    raw_value = self._row_value_for_field(row, field_name)
                     value = "" if pd.isna(raw_value) else str(raw_value).strip()
                     if is_required and not value:
                         raise ValueError(f"Falta {field_name}")
@@ -1385,7 +1407,7 @@ class DatabaseManager:
                     if self._normalize_field_name(field_name) in self.BASE_REGISTRATION_FIELD_NAMES:
                         continue
                     is_required = bool(field[4])
-                    raw_value = row[field_name] if field_name in df.columns else ""
+                    raw_value = self._row_value_for_field(row, field_name)
                     value = "" if pd.isna(raw_value) else str(raw_value).strip()
                     if is_required and not value:
                         raise ValueError(f"Falta {field_name}")
