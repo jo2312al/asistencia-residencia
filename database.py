@@ -199,6 +199,7 @@ class DatabaseManager:
         self._ensure_column(c, 'attendance_events', 'credential_id', 'VARCHAR(36)')
         self._ensure_column(c, 'attendance_events', 'legacy_attendance_id', 'INT')
         self._ensure_column(c, 'attendance_events', 'event_id', 'INT NULL')
+        self._ensure_performance_indexes(c)
         conn.commit()
         conn.close()
 
@@ -230,6 +231,28 @@ class DatabaseManager:
         """, (self.db_config['database'],))
         if not cursor.fetchone()[0]:
             cursor.execute("CREATE UNIQUE INDEX uq_projects_name_event ON projects (name, event_id)")
+
+    def _ensure_index(self, cursor, table_name, index_name, columns):
+        cursor.execute("""
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.STATISTICS
+            WHERE TABLE_SCHEMA = %s
+              AND TABLE_NAME = %s
+              AND INDEX_NAME = %s
+        """, (self.db_config['database'], table_name, index_name))
+        if cursor.fetchone()[0]:
+            return
+        cursor.execute(f"CREATE INDEX {index_name} ON {table_name} ({columns})")
+
+    def _ensure_performance_indexes(self, cursor):
+        self._ensure_index(cursor, 'students', 'idx_students_event_project', 'event_id, project_id')
+        self._ensure_index(cursor, 'students', 'idx_students_event_matricula', 'event_id, matricula')
+        self._ensure_index(cursor, 'students', 'idx_students_event_last_name', 'event_id, last_name_p, first_name')
+        self._ensure_index(cursor, 'participants', 'idx_participants_legacy_student', 'legacy_student_id')
+        self._ensure_index(cursor, 'participants', 'idx_participants_type', 'participant_type')
+        self._ensure_index(cursor, 'projects', 'idx_projects_event_name', 'event_id, name')
+        self._ensure_index(cursor, 'credentials', 'idx_credentials_participant', 'participant_id')
+        self._ensure_index(cursor, 'attendance_events', 'idx_attendance_events_event_time', 'event_id, timestamp')
 
     def _column_exists(self, cursor, table_name, column_name):
         cursor.execute("""
@@ -1722,34 +1745,70 @@ class DatabaseManager:
 
         return report_path
 
-    def get_all_students_filtered(self, matricula_search='', apellido_p_search='', project_id_filter='', event_id_filter=''):
+    def _student_filter_where(self, matricula_search='', apellido_p_search='', project_id_filter='', event_id_filter=''):
+        clauses = ["1=1"]
+        params = []
+        if matricula_search:
+            clauses.append("s.matricula LIKE %s")
+            params.append(f"%{matricula_search}%")
+        if apellido_p_search:
+            clauses.append("s.last_name_p LIKE %s")
+            params.append(f"%{apellido_p_search}%")
+        if project_id_filter:
+            clauses.append("s.project_id = %s")
+            params.append(project_id_filter)
+        if event_id_filter:
+            clauses.append("s.event_id = %s")
+            params.append(event_id_filter)
+        return " AND ".join(clauses), params
+
+    def count_students_filtered(self, matricula_search='', apellido_p_search='', project_id_filter='', event_id_filter=''):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
+        where_clause, params = self._student_filter_where(
+            matricula_search,
+            apellido_p_search,
+            project_id_filter,
+            event_id_filter,
+        )
+        c.execute(f"SELECT COUNT(*) FROM students s WHERE {where_clause}", params)
+        total = c.fetchone()[0]
+        conn.close()
+        return total
+
+    def get_all_students_filtered(self, matricula_search='', apellido_p_search='', project_id_filter='', event_id_filter='', sort_by='project', sort_dir='asc', limit=None, offset=0):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        sort_columns = {
+            'matricula': 's.matricula',
+            'nombre': 's.first_name',
+            'apellido_p': 's.last_name_p',
+            'apellido_m': 's.last_name_m',
+            'carrera': 's.carrera',
+            'tipo': "COALESCE(p.participant_type, 'alumno')",
+            'proyecto': 'project_name',
+        }
+        sort_expression = sort_columns.get(sort_by, 'project_name')
+        direction = 'DESC' if str(sort_dir).lower() == 'desc' else 'ASC'
+        where_clause, params = self._student_filter_where(
+            matricula_search,
+            apellido_p_search,
+            project_id_filter,
+            event_id_filter,
+        )
         
-        query = """
+        query = f"""
             SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
-                   s.project_id, s.event_id, COALESCE(p.participant_type, 'alumno')
+                   s.project_id, s.event_id, COALESCE(p.participant_type, 'alumno'), pr.name AS project_name
             FROM students s
             LEFT JOIN participants p ON p.legacy_student_id = s.id
-            WHERE 1=1
+            LEFT JOIN projects pr ON s.project_id = pr.id
+            WHERE {where_clause}
+            ORDER BY {sort_expression} {direction}, s.last_name_p ASC, s.first_name ASC, s.matricula ASC
         """
-        params = []
-        
-        if matricula_search:
-            query += " AND s.matricula LIKE %s"
-            params.append(f"%{matricula_search}%")
-        
-        if apellido_p_search:
-            query += " AND s.last_name_p LIKE %s"
-            params.append(f"%{apellido_p_search}%")
-        
-        if project_id_filter:
-            query += " AND s.project_id = %s"
-            params.append(project_id_filter)
-
-        if event_id_filter:
-            query += " AND s.event_id = %s"
-            params.append(event_id_filter)
+        if limit is not None:
+            query += " LIMIT %s OFFSET %s"
+            params.extend([int(limit), int(offset or 0)])
         
         c.execute(query, params)
         students = c.fetchall()
