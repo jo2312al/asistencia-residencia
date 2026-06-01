@@ -38,7 +38,18 @@
             <video id="qr-video" class="w-100" autoplay playsinline></video>
         </div>
         <canvas id="qr-canvas" style="display: none;"></canvas>
+        <div class="mt-3 d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-outline-primary" id="restart-scanner-btn">Reiniciar camara</button>
+        </div>
         <div id="qr-result" class="mt-3"></div>
+
+        <form id="manual-qr-form" class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+            <label for="manual_qr_data" class="form-label">Captura manual</label>
+            <div class="input-group">
+                <input type="text" class="form-control" id="manual_qr_data" placeholder="Token de credencial o matricula">
+                <button class="btn btn-primary" type="submit">Registrar</button>
+            </div>
+        </form>
     </div>
 </div>
 

@@ -1,5 +1,13 @@
 // scripts.js
 // Inicializar escáner QR (para /scan)
+const scannerState = {
+    stream: null,
+    active: false,
+    detecting: false,
+    detector: null,
+    lastStatusAt: 0
+};
+
 function initializeQRScanner() {
     console.log("Inicializando escáner QR");
     const video = document.getElementById('qr-video');
@@ -7,53 +15,120 @@ function initializeQRScanner() {
     const resultContainer = document.getElementById('qr-result');
     if (!video || !canvas || !resultContainer) {
         console.error("Elementos qr-video, qr-canvas o qr-result no encontrados");
-        resultContainer.innerHTML = `<p class="text-danger">Error: Elementos de la página no encontrados</p>`;
+        if (resultContainer) {
+            resultContainer.innerHTML = `<p class="text-danger">Error: Elementos de la pagina no encontrados</p>`;
+        }
         return;
     }
+
+    const restartButton = document.getElementById('restart-scanner-btn');
+    if (restartButton) {
+        restartButton.addEventListener('click', () => startQRScanner(video, canvas, resultContainer));
+    }
+
+    const manualForm = document.getElementById('manual-qr-form');
+    if (manualForm) {
+        manualForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const manualInput = document.getElementById('manual_qr_data');
+            const qrData = manualInput ? manualInput.value.trim() : '';
+            if (!qrData) {
+                resultContainer.innerHTML = `<p class="text-danger">Captura un token o matricula.</p>`;
+                return;
+            }
+            registerAttendance(qrData, () => {
+                if (manualInput) manualInput.value = '';
+            });
+        });
+    }
+
+    startQRScanner(video, canvas, resultContainer);
+}
+
+function stopQRScanner() {
+    scannerState.active = false;
+    if (scannerState.stream) {
+        scannerState.stream.getTracks().forEach(track => track.stop());
+        scannerState.stream = null;
+    }
+}
+
+async function startQRScanner(video, canvas, resultContainer) {
+    stopQRScanner();
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        resultContainer.innerHTML = `<p class="text-danger">El navegador no soporta acceso a la cámara</p>`;
+        resultContainer.innerHTML = `<p class="text-danger">El navegador no soporta acceso a la camara. Usa captura manual.</p>`;
         return;
     }
 
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-        .then(stream => {
-            console.log("Cámara accedida correctamente");
-            video.srcObject = stream;
-            video.play().catch(err => {
-                console.error("Error al reproducir video:", err);
-                resultContainer.innerHTML = `<p class="text-danger">Error al reproducir video: ${err.message}</p>`;
-            });
-            scanQRCode(video, canvas, resultContainer);
-        })
-        .catch(err => {
-            console.error("Error al acceder a la cámara:", err);
-            resultContainer.innerHTML = `<p class="text-danger">Error al acceder a la cámara: ${err.message}</p>`;
-        });
+    const constraints = [
+        { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } },
+        { video: true }
+    ];
+
+    let lastError = null;
+    for (const constraint of constraints) {
+        try {
+            scannerState.stream = await navigator.mediaDevices.getUserMedia(constraint);
+            break;
+        } catch (error) {
+            lastError = error;
+        }
+    }
+
+    if (!scannerState.stream) {
+        console.error("Error al acceder a la camara:", lastError);
+        resultContainer.innerHTML = `<p class="text-danger">No se pudo abrir la camara: ${escapeHtml(lastError ? lastError.message : 'permiso denegado')}. Usa captura manual.</p>`;
+        return;
+    }
+
+    try {
+        video.srcObject = scannerState.stream;
+        await video.play();
+        scannerState.active = true;
+        resultContainer.innerHTML = `<p class="text-info">Camara lista. Acerca el QR al recuadro.</p>`;
+        scanQRCode(video, canvas, resultContainer);
+    } catch (error) {
+        console.error("Error al reproducir video:", error);
+        resultContainer.innerHTML = `<p class="text-danger">Error al reproducir video: ${escapeHtml(error.message)}.</p>`;
+        stopQRScanner();
+    }
 }
 
 function scanQRCode(video, canvas, resultContainer) {
     console.log("Iniciando escaneo de QR");
     const context = canvas.getContext('2d');
 
-    function scan() {
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
-            canvas.height = video.videoHeight;
-            canvas.width = video.videoWidth;
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    async function scan() {
+        if (!scannerState.active) return;
+
+        if (video.readyState === video.HAVE_ENOUGH_DATA && !scannerState.detecting) {
+            scannerState.detecting = true;
             try {
-                const code = jsQR(imageData.data, imageData.width, imageData.height);
-                if (code) {
-                    console.log("QR detectado:", code.data);
-                    resultContainer.innerHTML = `<p class="text-info">Código QR detectado: ${code.data}</p>`;
-                    registerAttendance(code.data);
-                    return; // Detener escaneo tras lectura exitosa
-                } else {
+                const qrData = await detectQRData(video, canvas, context);
+                if (qrData) {
+                    console.log("QR detectado:", qrData);
+                    scannerState.active = false;
+                    resultContainer.innerHTML = `<p class="text-info">Codigo QR detectado. Registrando...</p>`;
+                    registerAttendance(qrData, () => {
+                        resultContainer.innerHTML = `<p class="text-info">Listo para escanear otro codigo.</p>`;
+                        scannerState.active = true;
+                        requestAnimationFrame(scan);
+                    });
+                    scannerState.detecting = false;
+                    return;
+                }
+
+                const now = Date.now();
+                if (now - scannerState.lastStatusAt > 800) {
                     resultContainer.innerHTML = `<p class="text-info">Escaneando...</p>`;
+                    scannerState.lastStatusAt = now;
                 }
             } catch (e) {
                 console.error("Error al procesar QR:", e);
+                resultContainer.innerHTML = `<p class="text-danger">No se pudo leer el QR: ${escapeHtml(e.message)}.</p>`;
+            } finally {
+                scannerState.detecting = false;
             }
         }
         requestAnimationFrame(scan);
@@ -61,7 +136,34 @@ function scanQRCode(video, canvas, resultContainer) {
     scan();
 }
 
-function registerAttendance(qrData) {
+async function detectQRData(video, canvas, context) {
+    if ('BarcodeDetector' in window) {
+        try {
+            if (!scannerState.detector) {
+                scannerState.detector = new BarcodeDetector({ formats: ['qr_code'] });
+            }
+            const codes = await scannerState.detector.detect(video);
+            if (codes.length) {
+                return codes[0].rawValue;
+            }
+        } catch (error) {
+            scannerState.detector = null;
+        }
+    }
+
+    if (typeof jsQR !== 'function') {
+        throw new Error('No cargo la libreria de lectura QR');
+    }
+
+    canvas.height = video.videoHeight;
+    canvas.width = video.videoWidth;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    return code ? code.data : null;
+}
+
+function registerAttendance(qrData, afterClose) {
     console.log("Registrando asistencia para QR:", qrData);
     const eventSelector = document.getElementById('event_id');
     const eventId = eventSelector ? eventSelector.value : '';
@@ -77,30 +179,34 @@ function registerAttendance(qrData) {
     })
     .then(data => {
         console.log("Respuesta de /register_attendance:", data);
-        const modalMessage = document.getElementById('modal-message');
-        const qrModal = new bootstrap.Modal(document.getElementById('qrModal'));
         if (data.success) {
-            modalMessage.innerHTML = `<p class="text-success">${data.message}</p>`;
+            showScannerModal(`<p class="text-success">${escapeHtml(data.message)}</p>`, afterClose);
         } else {
-            modalMessage.innerHTML = `<p class="text-danger">${data.error}</p>`;
+            showScannerModal(`<p class="text-danger">${escapeHtml(data.error || 'No se pudo registrar')}</p>`, afterClose);
         }
-        qrModal.show();
-        // Recargar página al cerrar el modal
-        document.getElementById('qrModal').addEventListener('hidden.bs.modal', function () {
-            location.reload();
-        }, { once: true });
     })
     .catch(error => {
         console.error("Error en fetch /register_attendance:", error);
-        const modalMessage = document.getElementById('modal-message');
-        const qrModal = new bootstrap.Modal(document.getElementById('qrModal'));
-        modalMessage.innerHTML = `<p class="text-danger">Error: ${error.message}</p>`;
-        qrModal.show();
-        // Recargar página al cerrar el modal
-        document.getElementById('qrModal').addEventListener('hidden.bs.modal', function () {
-            location.reload();
-        }, { once: true });
+        showScannerModal(`<p class="text-danger">Error: ${escapeHtml(error.message)}</p>`, afterClose);
     });
+}
+
+function showScannerModal(html, afterClose) {
+    const modalElement = document.getElementById('qrModal');
+    const modalMessage = document.getElementById('modal-message');
+    if (!modalElement || !modalMessage || typeof bootstrap === 'undefined') {
+        const resultContainer = document.getElementById('qr-result');
+        if (resultContainer) resultContainer.innerHTML = html;
+        if (typeof afterClose === 'function') afterClose();
+        return;
+    }
+
+    modalMessage.innerHTML = html;
+    const qrModal = new bootstrap.Modal(modalElement);
+    modalElement.addEventListener('hidden.bs.modal', function () {
+        if (typeof afterClose === 'function') afterClose();
+    }, { once: true });
+    qrModal.show();
 }
 
 function escapeHtml(value) {
