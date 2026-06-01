@@ -412,7 +412,8 @@ function initializeExcelPreview() {
                 resultContainer.innerHTML = `<p class="text-danger">Error: ${escapeHtml(result.error)}</p>`;
                 return;
             }
-            const missing = result.missing.length ? `<p class="text-danger">Faltan columnas: ${result.missing.map(escapeHtml).join(', ')}</p>` : '<p class="text-success">Columnas base completas.</p>';
+            const formatLabel = result.format === 'event_format' ? 'Formato de evento detectado.' : 'Columnas base completas.';
+            const missing = result.missing.length ? `<p class="text-danger">Faltan columnas: ${result.missing.map(escapeHtml).join(', ')}</p>` : `<p class="text-success">${formatLabel}</p>`;
             const columns = result.columns.map(escapeHtml).join(', ');
             resultContainer.innerHTML = `${missing}<p class="small text-muted mb-1">Filas detectadas: ${result.row_count}</p><p class="small text-muted">Columnas: ${columns}</p>`;
         } catch (error) {

@@ -3,6 +3,8 @@ from mysql.connector import Error
 import pandas as pd
 import uuid
 import os
+import re
+import hashlib
 import secrets
 import unicodedata
 from datetime import datetime
@@ -261,6 +263,201 @@ class DatabaseManager:
     def _normalize_field_name(self, value):
         text = unicodedata.normalize("NFD", value or "")
         return "".join(char for char in text if unicodedata.category(char) != "Mn").strip().lower()
+
+    def _normalize_excel_header(self, value):
+        text = unicodedata.normalize("NFD", str(value or ""))
+        text = "".join(char for char in text if unicodedata.category(char) != "Mn").lower()
+        text = "".join(char if char.isalnum() else " " for char in text)
+        return " ".join(text.split())
+
+    def _find_excel_column(self, df, aliases):
+        normalized = {self._normalize_excel_header(column): column for column in df.columns}
+        for alias in aliases:
+            column = normalized.get(self._normalize_excel_header(alias))
+            if column is not None:
+                return column
+        return None
+
+    def _read_excel_table(self, file):
+        if hasattr(file, "seek"):
+            file.seek(0)
+        df = pd.read_excel(file)
+        if self._looks_like_event_excel(df):
+            return df
+
+        if hasattr(file, "seek"):
+            file.seek(0)
+        raw_df = pd.read_excel(file, header=None)
+        header_row_index = self._find_event_excel_header_row(raw_df)
+        if header_row_index is None:
+            return df
+
+        headers = [
+            self._cell_text(value) or f"Unnamed: {index}"
+            for index, value in enumerate(raw_df.iloc[header_row_index].tolist())
+        ]
+        table_df = raw_df.iloc[header_row_index + 1:].copy()
+        table_df.columns = headers
+        table_df = table_df.dropna(how="all").reset_index(drop=True)
+        return table_df
+
+    def _find_event_excel_header_row(self, raw_df):
+        for index, row in raw_df.head(30).iterrows():
+            normalized_values = {self._normalize_excel_header(value) for value in row.tolist() if self._cell_text(value)}
+            has_project = "proyecto" in normalized_values
+            has_name = any(value in normalized_values for value in ("nombre autores asesores", "nombre autores", "autores", "asesores"))
+            has_control = any(
+                value in normalized_values
+                for value in (
+                    "num control departamento",
+                    "numero control departamento",
+                    "num control",
+                    "no control",
+                    "departamento",
+                )
+            )
+            if has_project and has_name and has_control:
+                return index
+        return None
+
+    def _cell_text(self, value):
+        if pd.isna(value):
+            return ""
+        return str(value).strip()
+
+    def _split_cell_items(self, value, split_commas=False):
+        text = self._cell_text(value)
+        if not text:
+            return []
+        pattern = r"[\n;|]+"
+        if split_commas:
+            pattern = r"[\n;|,]+"
+        return [item.strip() for item in re.split(pattern, text) if item.strip()]
+
+    def _split_full_name(self, full_name):
+        parts = self._cell_text(full_name).split()
+        if not parts:
+            return "", "", ""
+        if len(parts) == 1:
+            return parts[0], "", ""
+        if len(parts) == 2:
+            return parts[0], parts[1], ""
+        return " ".join(parts[:-2]), parts[-2], parts[-1]
+
+    def _is_placeholder_participant_name(self, value):
+        normalized = self._normalize_excel_header(value)
+        return normalized in {
+            "autor",
+            "autores",
+            "asesor",
+            "asesores",
+            "nombre autores asesores",
+        }
+
+    def _advisor_matricula(self, name, email, project, folio):
+        source = "|".join([
+            self._normalize_excel_header(name),
+            self._normalize_excel_header(email),
+            self._normalize_excel_header(project),
+            self._normalize_excel_header(folio),
+        ])
+        digest = hashlib.sha1(source.encode("utf-8")).hexdigest()[:12].upper()
+        return f"ASE-{digest}"
+
+    def _looks_like_event_excel(self, df):
+        return (
+            self._find_excel_column(df, ["Proyecto"]) is not None
+            and self._find_excel_column(df, ["Nombre Autores/Asesores", "Nombre Autores", "Autores", "Asesores"]) is not None
+            and self._find_excel_column(df, ["Num. Control/Departamento", "Numero Control Departamento", "Num Control", "Departamento"]) is not None
+        )
+
+    def _convert_event_excel(self, df):
+        project_col = self._find_excel_column(df, ["Proyecto"])
+        folio_col = self._find_excel_column(df, ["Folio"])
+        event_col = self._find_excel_column(df, ["Evento"])
+        category_col = self._find_excel_column(df, ["Categoria", "Categoría"])
+        level_col = self._find_excel_column(df, ["Nivel"])
+        semester_col = self._find_excel_column(df, ["Semestre"])
+        career_col = self._find_excel_column(df, ["Carrera"])
+        name_col = self._find_excel_column(df, ["Nombre Autores/Asesores", "Nombre Autores", "Nombre Asesores", "Autores", "Asesores"])
+        email_col = self._find_excel_column(df, ["E-mail Autores/Asesores", "Email Autores/Asesores", "Correo Autores/Asesores", "E-mail", "Email"])
+        control_col = self._find_excel_column(df, ["Num. Control/Departamento", "Numero Control Departamento", "Num Control", "No Control", "Departamento"])
+
+        rows = []
+        current = {
+            "project": "",
+            "folio": "",
+            "event": "",
+            "category": "",
+            "level": "",
+            "semester": "",
+            "career": "",
+        }
+
+        for _, row in df.dropna(how="all").iterrows():
+            values = {
+                "project": self._cell_text(row[project_col]) if project_col else "",
+                "folio": self._cell_text(row[folio_col]) if folio_col else "",
+                "event": self._cell_text(row[event_col]) if event_col else "",
+                "category": self._cell_text(row[category_col]) if category_col else "",
+                "level": self._cell_text(row[level_col]) if level_col else "",
+                "semester": self._cell_text(row[semester_col]) if semester_col else "",
+                "career": self._cell_text(row[career_col]) if career_col else "",
+            }
+            for key, value in values.items():
+                if value:
+                    current[key] = value
+
+            names = self._split_cell_items(row[name_col]) if name_col else []
+            emails = self._split_cell_items(row[email_col], split_commas=True) if email_col else []
+            controls = self._split_cell_items(row[control_col], split_commas=True) if control_col else []
+
+            for index, name in enumerate(names):
+                if self._is_placeholder_participant_name(name):
+                    continue
+
+                email = emails[index] if index < len(emails) else (emails[0] if len(emails) == 1 else "")
+                control = controls[index] if index < len(controls) else (controls[0] if len(controls) == 1 else "")
+                combined = self._normalize_excel_header(f"{name} {email} {control}")
+                is_advisor = "asesor" in combined or (control and any(char.isalpha() for char in control) and not any(char.isdigit() for char in control))
+                participant_type = "asesor" if is_advisor else "alumno"
+                first_name, last_name_p, last_name_m = self._split_full_name(name)
+                matricula = control
+                if participant_type == "asesor":
+                    matricula = self._advisor_matricula(name, email, current["project"], current["folio"])
+                if not matricula:
+                    prefix = "ASESOR" if participant_type == "asesor" else "SINCONTROL"
+                    matricula = f"{prefix}-{uuid.uuid4().hex[:8]}"
+
+                rows.append({
+                    "first_name": first_name,
+                    "last_name_p": last_name_p,
+                    "last_name_m": last_name_m,
+                    "matricula": matricula,
+                    "carrera": current["career"] or current["level"] or "Sin carrera",
+                    "project_name": current["project"],
+                    "email": email,
+                    "participant_type": participant_type,
+                    "Folio": current["folio"],
+                    "Evento": current["event"],
+                    "Categoria": current["category"],
+                    "Nivel": current["level"],
+                    "Semestre": current["semester"],
+                    "Departamento": control if participant_type == "asesor" else "",
+                })
+
+        if not rows:
+            raise ValueError("No se encontraron autores o asesores para importar en el Excel")
+        return pd.DataFrame(rows)
+
+    def prepare_excel_import_dataframe(self, file):
+        df = self._read_excel_table(file)
+        required_columns = ['first_name', 'last_name_p', 'last_name_m', 'matricula', 'carrera']
+        if all(col in df.columns for col in required_columns):
+            return df, "standard"
+        if self._looks_like_event_excel(df):
+            return self._convert_event_excel(df), "event_format"
+        return df, "unknown"
 
     def update_user_role(self, username, role):
         role_value = self.normalize_role(role)
@@ -1108,10 +1305,13 @@ class DatabaseManager:
         return updated > 0
 
     def upload_students_from_excel(self, file, project_id, event_id=None):
-        df = pd.read_excel(file)
+        df, _ = self.prepare_excel_import_dataframe(file)
         required_columns = ['first_name', 'last_name_p', 'last_name_m', 'matricula', 'carrera']
         if not all(col in df.columns for col in required_columns):
-            raise ValueError("El Excel debe contener las columnas: first_name, last_name_p, last_name_m, matricula, carrera")
+            raise ValueError(
+                "El Excel debe contener las columnas: first_name, last_name_p, last_name_m, matricula, carrera "
+                "o el formato con Proyecto, Folio, Evento, Nombre Autores/Asesores y Num. Control/Departamento"
+            )
 
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()

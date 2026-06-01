@@ -363,6 +363,62 @@ def get_credential_students(qr_tool=None, event_id=None):
     student_data.sort(key=lambda x: (x["project_id"] is None, x["project_id"] or float("inf")))
     return student_data
 
+
+def safe_filename(value, fallback="archivo"):
+    text = unicodedata.normalize("NFD", str(value or ""))
+    text = "".join(char for char in text if unicodedata.category(char) != "Mn")
+    text = "".join(char if char.isalnum() else "_" for char in text.lower())
+    text = "_".join(part for part in text.split("_") if part)
+    return text or fallback
+
+
+def build_rectangular_credentials_pdf(student_data, output):
+    doc = SimpleDocTemplate(
+        output,
+        pagesize=letter,
+        leftMargin=0.45 * inch,
+        rightMargin=0.45 * inch,
+        topMargin=0.45 * inch,
+        bottomMargin=0.45 * inch,
+    )
+    elements = []
+    styles = getSampleStyleSheet()
+
+    page_width = letter[0]
+    page_height = letter[1]
+    margin = 0.45 * inch
+    usable_width = page_width - 2 * margin
+    usable_height = page_height - 2 * margin
+    card_width = usable_width / 2
+    card_height = 1.55 * inch
+
+    for i in range(0, len(student_data), 10):
+        chunk = student_data[i:i + 10]
+        rows = []
+        for j in range(0, len(chunk), 2):
+            left = build_rectangular_credential_card(chunk[j], styles, card_width - 0.08 * inch, card_height)
+            right = build_rectangular_credential_card(chunk[j + 1], styles, card_width - 0.08 * inch, card_height) if j + 1 < len(chunk) else ""
+            rows.append([left, right])
+
+        table = Table(rows, colWidths=[card_width, card_width], rowHeights=[usable_height / 5] * len(rows))
+        table.setStyle(
+            TableStyle(
+                [
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ]
+            )
+        )
+        elements.append(table)
+        if i + 10 < len(student_data):
+            elements.append(Spacer(1, 0.2 * inch))
+
+    doc.build(elements)
+
 default_admin_username = os.getenv("ADMIN_USERNAME")
 default_admin_password = os.getenv("ADMIN_PASSWORD")
 if default_admin_username and default_admin_password:
@@ -1180,53 +1236,65 @@ def download_all_credentials_rect_pdf():
         os.makedirs(report_dir)
     pdf_path = os.path.join(report_dir, f"credentials_rect_{timestamp}.pdf").replace("\\", "/")
 
-    doc = SimpleDocTemplate(
-        pdf_path,
-        pagesize=letter,
-        leftMargin=0.45 * inch,
-        rightMargin=0.45 * inch,
-        topMargin=0.45 * inch,
-        bottomMargin=0.45 * inch,
-    )
-    elements = []
-    styles = getSampleStyleSheet()
+    student_data = get_credential_students(local_qr_manager, event_id)
+    if not student_data:
+        flash("No hay credenciales para descargar", "warning")
+        return redirect(url_for("data", event_id=event_id) if event_id else url_for("data"))
+
+    build_rectangular_credentials_pdf(student_data, pdf_path)
+    return send_file(pdf_path, as_attachment=True, download_name="credenciales_rectangulares.pdf")
+
+
+@app.route("/download_credentials_by_project")
+@login_required
+@role_required("admin", "staff")
+def download_credentials_by_project():
+    local_qr_manager = QRManager()
+    event_id = request.args.get("event_id") or None
     student_data = get_credential_students(local_qr_manager, event_id)
 
-    page_width = letter[0]
-    page_height = letter[1]
-    margin = 0.45 * inch
-    usable_width = page_width - 2 * margin
-    usable_height = page_height - 2 * margin
-    card_width = usable_width / 2
-    card_height = 1.55 * inch
+    if not student_data:
+        flash("No hay credenciales para descargar", "warning")
+        return redirect(url_for("data", event_id=event_id) if event_id else url_for("data"))
 
-    for i in range(0, len(student_data), 10):
-        chunk = student_data[i:i + 10]
-        rows = []
-        for j in range(0, len(chunk), 2):
-            left = build_rectangular_credential_card(chunk[j], styles, card_width - 0.08 * inch, card_height)
-            right = build_rectangular_credential_card(chunk[j + 1], styles, card_width - 0.08 * inch, card_height) if j + 1 < len(chunk) else ""
-            rows.append([left, right])
-
-        table = Table(rows, colWidths=[card_width, card_width], rowHeights=[usable_height / 5] * len(rows))
-        table.setStyle(
-            TableStyle(
-                [
-                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                    ("TOPPADDING", (0, 0), (-1, -1), 3),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-                ]
-            )
+    grouped_by_project = {}
+    for student in student_data:
+        key = student.get("project_id") or "sin_proyecto"
+        grouped_by_project.setdefault(
+            key,
+            {
+                "name": student.get("project_name") or "Sin proyecto",
+                "students": [],
+            },
         )
-        elements.append(table)
-        if i + 10 < len(student_data):
-            elements.append(Spacer(1, 0.2 * inch))
+        grouped_by_project[key]["students"].append(student)
 
-    doc.build(elements)
-    return send_file(pdf_path, as_attachment=True, download_name="credenciales_rectangulares.pdf")
+    memory_file = BytesIO()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    used_names = set()
+
+    with zipfile.ZipFile(memory_file, "w", zipfile.ZIP_DEFLATED) as zf:
+        for project_key, project in grouped_by_project.items():
+            pdf_buffer = BytesIO()
+            build_rectangular_credentials_pdf(project["students"], pdf_buffer)
+            pdf_buffer.seek(0)
+
+            base_name = safe_filename(project["name"], f"proyecto_{project_key}")
+            file_name = f"{base_name}.pdf"
+            counter = 2
+            while file_name in used_names:
+                file_name = f"{base_name}_{counter}.pdf"
+                counter += 1
+            used_names.add(file_name)
+            zf.writestr(file_name, pdf_buffer.getvalue())
+
+    memory_file.seek(0)
+    return send_file(
+        memory_file,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"credenciales_por_proyecto_{timestamp}.zip",
+    )
 
 
 @app.route("/download_all_qrs")
@@ -1457,13 +1525,14 @@ def preview_excel():
         file = request.files.get("excel_file") or request.files.get("file")
         if not file or file.filename == "":
             return jsonify({"success": False, "error": "Selecciona un archivo Excel"}), 400
-        df = pd.read_excel(file)
+        df, import_format = db_manager.prepare_excel_import_dataframe(file)
         required = ['first_name', 'last_name_p', 'last_name_m', 'matricula', 'carrera']
         missing = [column for column in required if column not in df.columns]
         rows = df.head(5).fillna("").to_dict(orient="records")
         return jsonify({
             "success": True,
             "columns": list(df.columns),
+            "format": import_format,
             "missing": missing,
             "row_count": len(df.index),
             "preview": rows,
