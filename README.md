@@ -44,3 +44,5 @@ La aplicacion inicia por defecto en `http://localhost:5000`.
 ## Despliegue
 
 El workflow de GitHub Actions genera un paquete de despliegue y lo publica en Azure Web App usando el secreto de publish profile configurado en el repositorio.
+
+Redeploy verificado desde GitHub Actions.
