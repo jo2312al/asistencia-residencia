@@ -781,29 +781,6 @@ class DatabaseManager:
         conn.close()
         return rows
 
-    def get_students_for_credentials(self, event_id=None):
-        conn = mysql.connector.connect(**self.db_config)
-        c = conn.cursor(dictionary=True)
-        query = """
-            SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
-                   s.project_id, s.event_id, COALESCE(p.participant_type, 'alumno') AS participant_type,
-                   pr.name AS project_name, c.token AS credential_token, c.qr_path
-            FROM students s
-            LEFT JOIN participants p ON p.legacy_student_id = s.id
-            LEFT JOIN credentials c ON c.participant_id = p.id
-            LEFT JOIN projects pr ON s.project_id = pr.id
-            WHERE 1=1
-        """
-        params = []
-        if event_id:
-            query += " AND s.event_id = %s"
-            params.append(event_id)
-        query += " ORDER BY pr.name ASC, s.last_name_p ASC, s.first_name ASC, s.matricula ASC"
-        c.execute(query, params)
-        rows = c.fetchall()
-        conn.close()
-        return rows
-
     def get_event_email_logs(self, event_id, limit=25):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
