@@ -960,6 +960,37 @@ class DatabaseManager:
         conn.close()
         return project_id
 
+    def _get_or_create_project_by_name_with_cursor(self, cursor, name, event_id):
+        project_name = (name or "").strip()
+        if not project_name:
+            return None
+
+        cursor.execute(
+            "SELECT id FROM projects WHERE name = %s AND (event_id = %s OR event_id IS NULL) ORDER BY event_id IS NULL LIMIT 1",
+            (project_name, event_id)
+        )
+        existing = cursor.fetchone()
+        if existing:
+            project_id = existing[0]
+            cursor.execute("UPDATE projects SET event_id = %s WHERE id = %s AND event_id IS NULL", (event_id, project_id))
+            return project_id
+
+        try:
+            cursor.execute(
+                "INSERT INTO projects (name, description, event_id) VALUES (%s, %s, %s)",
+                (project_name, None, event_id)
+            )
+            return cursor.lastrowid
+        except mysql.connector.Error as e:
+            if e.errno != 1062:
+                raise
+            cursor.execute("SELECT id FROM projects WHERE name = %s LIMIT 1", (project_name,))
+            row = cursor.fetchone()
+            project_id = row[0] if row else None
+            if project_id:
+                cursor.execute("UPDATE projects SET event_id = %s WHERE id = %s AND event_id IS NULL", (event_id, project_id))
+            return project_id
+
     def get_or_create_project_by_name(self, name, event_id):
         project_name = (name or "").strip()
         if not project_name:
@@ -967,35 +998,8 @@ class DatabaseManager:
 
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
-        c.execute(
-            "SELECT id FROM projects WHERE name = %s AND (event_id = %s OR event_id IS NULL)",
-            (project_name, event_id)
-        )
-        existing = c.fetchone()
-        if existing:
-            project_id = existing[0]
-            c.execute("UPDATE projects SET event_id = %s WHERE id = %s AND event_id IS NULL", (event_id, project_id))
-            conn.commit()
-            conn.close()
-            return project_id
-
-        try:
-            c.execute(
-                "INSERT INTO projects (name, description, event_id) VALUES (%s, %s, %s)",
-                (project_name, None, event_id)
-            )
-            conn.commit()
-            project_id = c.lastrowid
-        except mysql.connector.Error as e:
-            if e.errno != 1062:
-                conn.close()
-                raise
-            c.execute("SELECT id FROM projects WHERE name = %s", (project_name,))
-            row = c.fetchone()
-            project_id = row[0] if row else None
-            if project_id:
-                c.execute("UPDATE projects SET event_id = %s WHERE id = %s AND event_id IS NULL", (event_id, project_id))
-                conn.commit()
+        project_id = self._get_or_create_project_by_name_with_cursor(c, project_name, event_id)
+        conn.commit()
         conn.close()
         return project_id
 
@@ -1363,6 +1367,8 @@ class DatabaseManager:
         project_fields = []
         event_fields = []
         project_column = next((col for col in ('project_id', 'project_name', 'project', 'proyecto') if col in df.columns), None)
+        project_lookup = {}
+        project_fields_cache = {}
 
         if event_id:
             c.execute("SELECT id FROM events WHERE id = %s", (event_id,))
@@ -1377,6 +1383,18 @@ class DatabaseManager:
                 conn.close()
                 raise ValueError("Proyecto no encontrado")
             project_fields = self.get_project_fields(project_id)
+            project_fields_cache[int(project_id)] = project_fields
+
+        if project_column and project_column != 'project_id':
+            project_names = []
+            for raw_project in df[project_column].dropna().tolist():
+                project_name = str(raw_project).strip()
+                if project_name and project_name not in project_lookup:
+                    project_names.append(project_name)
+                    project_lookup[project_name] = None
+            for project_name in project_names:
+                project_lookup[project_name] = self._get_or_create_project_by_name_with_cursor(c, project_name, event_id)
+            conn.commit()
 
         required_dynamic_columns = [field[2] for field in project_fields if field[4]]
         required_dynamic_columns += [
@@ -1410,12 +1428,17 @@ class DatabaseManager:
                         if project_column == 'project_id' and raw_project.isdigit():
                             row_project_id = int(raw_project)
                         else:
-                            row_project_id = self.get_or_create_project_by_name(raw_project, event_id)
+                            row_project_id = project_lookup.get(raw_project)
+                            if row_project_id is None:
+                                row_project_id = self._get_or_create_project_by_name_with_cursor(c, raw_project, event_id)
+                                project_lookup[raw_project] = row_project_id
                 if row_project_id:
                     imported_project_ids.add(row_project_id)
                 row_project_fields = project_fields
                 if row_project_id and row_project_id != project_id:
-                    row_project_fields = self.get_project_fields(row_project_id)
+                    if row_project_id not in project_fields_cache:
+                        project_fields_cache[row_project_id] = self.get_project_fields(row_project_id)
+                    row_project_fields = project_fields_cache[row_project_id]
                 dynamic_values = {}
                 for field in row_project_fields:
                     field_id = field[0]
