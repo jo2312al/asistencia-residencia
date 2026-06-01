@@ -791,6 +791,29 @@ class DatabaseManager:
         conn.close()
         return rows
 
+    def get_students_for_credentials(self, event_id=None):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor(dictionary=True)
+        query = """
+            SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
+                   s.project_id, s.event_id, COALESCE(p.participant_type, 'alumno') AS participant_type,
+                   pr.name AS project_name, cr.token AS credential_token, cr.qr_path
+            FROM students s
+            LEFT JOIN participants p ON p.legacy_student_id = s.id
+            LEFT JOIN credentials cr ON cr.participant_id = p.id
+            LEFT JOIN projects pr ON s.project_id = pr.id
+            WHERE 1=1
+        """
+        params = []
+        if event_id:
+            query += " AND s.event_id = %s"
+            params.append(event_id)
+        query += " ORDER BY pr.name ASC, s.last_name_p ASC, s.first_name ASC, s.matricula ASC"
+        c.execute(query, params)
+        rows = c.fetchall()
+        conn.close()
+        return rows
+
     def get_event_counts(self, event_id):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
@@ -1722,35 +1745,79 @@ class DatabaseManager:
 
         return report_path
 
-    def get_all_students_filtered(self, matricula_search='', apellido_p_search='', project_id_filter='', event_id_filter=''):
+    def _student_filter_where(self, matricula_search='', apellido_p_search='', project_id_filter='', event_id_filter=''):
+        clauses = ["1=1"]
+        params = []
+        if matricula_search:
+            clauses.append("s.matricula LIKE %s")
+            params.append(f"%{matricula_search}%")
+        if apellido_p_search:
+            clauses.append("s.last_name_p LIKE %s")
+            params.append(f"%{apellido_p_search}%")
+        if project_id_filter:
+            clauses.append("s.project_id = %s")
+            params.append(project_id_filter)
+        if event_id_filter:
+            clauses.append("s.event_id = %s")
+            params.append(event_id_filter)
+        return " AND ".join(clauses), params
+
+    def count_students_filtered(self, matricula_search='', apellido_p_search='', project_id_filter='', event_id_filter=''):
         conn = mysql.connector.connect(**self.db_config)
         c = conn.cursor()
-        
-        query = """
+        where_clause, params = self._student_filter_where(
+            matricula_search,
+            apellido_p_search,
+            project_id_filter,
+            event_id_filter,
+        )
+        c.execute(f"SELECT COUNT(*) FROM students s WHERE {where_clause}", params)
+        total = c.fetchone()[0]
+        conn.close()
+        return total
+
+    def get_all_students_filtered(
+        self,
+        matricula_search='',
+        apellido_p_search='',
+        project_id_filter='',
+        event_id_filter='',
+        sort_by='proyecto',
+        sort_dir='asc',
+        limit=None,
+        offset=0,
+    ):
+        conn = mysql.connector.connect(**self.db_config)
+        c = conn.cursor()
+        sort_columns = {
+            'matricula': 's.matricula',
+            'nombre': 's.first_name',
+            'apellido_p': 's.last_name_p',
+            'apellido_m': 's.last_name_m',
+            'carrera': 's.carrera',
+            'tipo': "COALESCE(p.participant_type, 'alumno')",
+            'proyecto': 'project_name',
+        }
+        sort_expression = sort_columns.get(sort_by, 'project_name')
+        direction = 'DESC' if str(sort_dir).lower() == 'desc' else 'ASC'
+        where_clause, params = self._student_filter_where(
+            matricula_search,
+            apellido_p_search,
+            project_id_filter,
+            event_id_filter,
+        )
+        query = f"""
             SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
-                   s.project_id, s.event_id, COALESCE(p.participant_type, 'alumno')
+                   s.project_id, s.event_id, COALESCE(p.participant_type, 'alumno'), pr.name AS project_name
             FROM students s
             LEFT JOIN participants p ON p.legacy_student_id = s.id
-            WHERE 1=1
+            LEFT JOIN projects pr ON s.project_id = pr.id
+            WHERE {where_clause}
+            ORDER BY {sort_expression} {direction}, s.last_name_p ASC, s.first_name ASC, s.matricula ASC
         """
-        params = []
-        
-        if matricula_search:
-            query += " AND s.matricula LIKE %s"
-            params.append(f"%{matricula_search}%")
-        
-        if apellido_p_search:
-            query += " AND s.last_name_p LIKE %s"
-            params.append(f"%{apellido_p_search}%")
-        
-        if project_id_filter:
-            query += " AND s.project_id = %s"
-            params.append(project_id_filter)
-
-        if event_id_filter:
-            query += " AND s.event_id = %s"
-            params.append(event_id_filter)
-        
+        if limit is not None:
+            query += " LIMIT %s OFFSET %s"
+            params.extend([int(limit), int(offset or 0)])
         c.execute(query, params)
         students = c.fetchall()
         conn.close()

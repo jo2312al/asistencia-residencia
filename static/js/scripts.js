@@ -73,8 +73,7 @@ function registerAttendance(qrData) {
         body: JSON.stringify({ qr_data: qrData, event_id: eventId, event_type: eventType })
     })
     .then(response => {
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return response.json();
+        return readJsonResponse(response);
     })
     .then(data => {
         console.log("Respuesta de /register_attendance:", data);
@@ -113,6 +112,21 @@ function escapeHtml(value) {
         .replace(/'/g, '&#039;');
 }
 
+async function readJsonResponse(response) {
+    const text = await response.text();
+    let payload = null;
+    try {
+        payload = text ? JSON.parse(text) : {};
+    } catch (error) {
+        const message = text.trim() || `HTTP ${response.status}`;
+        throw new Error(message.slice(0, 500));
+    }
+    if (!response.ok) {
+        throw new Error(payload.error || payload.message || `HTTP ${response.status}`);
+    }
+    return payload;
+}
+
 function normalizeFieldType(fieldType) {
     const allowedTypes = ['text', 'email', 'number', 'date', 'tel'];
     return allowedTypes.includes(fieldType) ? fieldType : 'text';
@@ -136,7 +150,7 @@ async function loadEventFields(eventId) {
 
     try {
         const response = await fetch(`/event_fields/${eventId}`);
-        const result = await response.json();
+        const result = await readJsonResponse(response);
         if (!result.success || !result.fields.length) return;
         const baseFieldNames = new Set(['nombre', 'apellido paterno', 'apellido materno', 'matricula', 'carrera']);
         const fields = result.fields.filter((field) => !baseFieldNames.has(normalizeFieldName(field.name)));
@@ -189,7 +203,7 @@ async function loadEventProjects(eventId, selectId) {
 
     try {
         const response = await fetch(`/event_projects/${eventId}`);
-        const result = await response.json();
+        const result = await readJsonResponse(response);
         if (!result.success) return;
         if (!result.projects.length) {
             projectSelect.innerHTML = '<option value="">Este evento no tiene proyectos</option>';
@@ -311,7 +325,7 @@ function initializeGenerateQRForm() {
                     method: 'POST',
                     body: formData
                 });
-                const result = await response.json();
+                const result = await readJsonResponse(response);
                 console.log("Respuesta de /generate_qr:", result);
                 const resultContainer = document.getElementById('qr-result');
                 if (result.success) {
@@ -378,7 +392,7 @@ function initializeExcelUploadForm() {
                     method: 'POST',
                     body: formData
                 });
-                const result = await response.json();
+                const result = await readJsonResponse(response);
                 console.log("Respuesta de /upload_excel:", result);
                 const resultContainer = document.getElementById('excel-result');
                 if (result.success) {
@@ -407,7 +421,7 @@ function initializeExcelPreview() {
                 method: 'POST',
                 body: formData
             });
-            const result = await response.json();
+            const result = await readJsonResponse(response);
             if (!result.success) {
                 resultContainer.innerHTML = `<p class="text-danger">Error: ${escapeHtml(result.error)}</p>`;
                 return;
@@ -436,7 +450,7 @@ function initializeReportForm() {
                     method: 'POST',
                     body: formData
                 });
-                const result = await response.json();
+                const result = await readJsonResponse(response);
                 console.log("Respuesta de /generate_report:", result);
                 const resultContainer = document.getElementById('report-result');
                 if (result.success) {
