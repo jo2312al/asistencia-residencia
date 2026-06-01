@@ -27,7 +27,7 @@ jobs:
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
-          app-name: asistencia
+          app-name: asistencia-residencia-6282
           slot-name: production
           publish-profile: ${{ secrets.AzureAppService_PublishProfile_17ae63d944d5487c871ac1d4f9fc20f3 }}
           package: release.zip
