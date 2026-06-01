@@ -209,40 +209,48 @@ class DatabaseManager:
         cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
 
     def _ensure_project_event_unique_index(self, cursor):
-        cursor.execute("""
-            SELECT INDEX_NAME
-            FROM INFORMATION_SCHEMA.STATISTICS
-            WHERE TABLE_SCHEMA = %s
-              AND TABLE_NAME = 'projects'
-              AND NON_UNIQUE = 0
-              AND INDEX_NAME <> 'PRIMARY'
-            GROUP BY INDEX_NAME
-            HAVING GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) = 'name'
-        """, (self.db_config['database'],))
-        for (index_name,) in cursor.fetchall():
-            cursor.execute(f"ALTER TABLE projects DROP INDEX `{index_name}`")
+        try:
+            cursor.execute("""
+                SELECT INDEX_NAME
+                FROM INFORMATION_SCHEMA.STATISTICS
+                WHERE TABLE_SCHEMA = %s
+                  AND TABLE_NAME = 'projects'
+                  AND NON_UNIQUE = 0
+                  AND INDEX_NAME <> 'PRIMARY'
+                GROUP BY INDEX_NAME
+                HAVING GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) = 'name'
+            """, (self.db_config['database'],))
+            for (index_name,) in cursor.fetchall():
+                cursor.execute(f"ALTER TABLE projects DROP INDEX `{index_name}`")
 
-        cursor.execute("""
-            SELECT COUNT(*)
-            FROM INFORMATION_SCHEMA.STATISTICS
-            WHERE TABLE_SCHEMA = %s
-              AND TABLE_NAME = 'projects'
-              AND INDEX_NAME = 'uq_projects_name_event'
-        """, (self.db_config['database'],))
-        if not cursor.fetchone()[0]:
-            cursor.execute("CREATE UNIQUE INDEX uq_projects_name_event ON projects (name, event_id)")
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM INFORMATION_SCHEMA.STATISTICS
+                WHERE TABLE_SCHEMA = %s
+                  AND TABLE_NAME = 'projects'
+                  AND INDEX_NAME = 'uq_projects_name_event'
+            """, (self.db_config['database'],))
+            if not cursor.fetchone()[0]:
+                cursor.execute("CREATE UNIQUE INDEX uq_projects_name_event ON projects (name, event_id)")
+        except mysql.connector.Error:
+            # Existing production data can contain duplicates from prior imports.
+            # Index optimization must not prevent the web app from starting.
+            return
 
     def _ensure_index(self, cursor, table_name, index_name, columns):
-        cursor.execute("""
-            SELECT COUNT(*)
-            FROM INFORMATION_SCHEMA.STATISTICS
-            WHERE TABLE_SCHEMA = %s
-              AND TABLE_NAME = %s
-              AND INDEX_NAME = %s
-        """, (self.db_config['database'], table_name, index_name))
-        if cursor.fetchone()[0]:
+        try:
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM INFORMATION_SCHEMA.STATISTICS
+                WHERE TABLE_SCHEMA = %s
+                  AND TABLE_NAME = %s
+                  AND INDEX_NAME = %s
+            """, (self.db_config['database'], table_name, index_name))
+            if cursor.fetchone()[0]:
+                return
+            cursor.execute(f"CREATE INDEX {index_name} ON {table_name} ({columns})")
+        except mysql.connector.Error:
             return
-        cursor.execute(f"CREATE INDEX {index_name} ON {table_name} ({columns})")
 
     def _ensure_performance_indexes(self, cursor):
         self._ensure_index(cursor, 'students', 'idx_students_event_project', 'event_id, project_id')
