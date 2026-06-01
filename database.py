@@ -432,11 +432,18 @@ class DatabaseManager:
             "level": "",
             "semester": "",
             "career": "",
+            "description": "",
         }
 
         for _, row in df.dropna(how="all").iterrows():
+            project_value = self._cell_text(row[project_col]) if project_col else ""
+            folio_value = self._cell_text(row[folio_col]) if folio_col else ""
+            is_project_header = bool(project_value and re.match(r"^\d+-\d+$", folio_value))
+            if project_value and not is_project_header and not self._is_placeholder_participant_name(project_value):
+                current["description"] = project_value
+
             values = {
-                "project": self._cell_text(row[project_col]) if project_col else "",
+                "project": project_value if is_project_header else "",
                 "folio": self._cell_text(row[folio_col]) if folio_col else "",
                 "event": self._cell_text(row[event_col]) if event_col else "",
                 "category": self._cell_text(row[category_col]) if category_col else "",
@@ -485,6 +492,7 @@ class DatabaseManager:
                     "Categoria": current["category"],
                     "Nivel": current["level"],
                     "Semestre": current["semester"],
+                    "Descripcion": current["description"],
                     "Departamento": control if participant_type == "asesor" else "",
                 })
 
