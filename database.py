@@ -1847,21 +1847,46 @@ class DatabaseManager:
         finally:
             conn.close()
 
-    def _filtered_students_query(self, matricula, apellido, project_id, event_id, sort_by, sort_dir, limit, offset):
+    def get_students_filtered_page(
+        self,
+        matricula_search='',
+        apellido_p_search='',
+        project_id_filter='',
+        event_id_filter='',
+        sort_by='proyecto',
+        sort_dir='asc',
+        limit=10,
+        offset=0,
+    ):
+        conn = self.connect()
+        try:
+            query, params = self._filtered_students_query(
+                matricula_search, apellido_p_search, project_id_filter, event_id_filter, sort_by, sort_dir, limit, offset, True
+            )
+            c = conn.cursor()
+            c.execute(query, params)
+            rows = c.fetchall()
+            total = rows[0][-1] if rows else 0
+            return rows, total
+        finally:
+            conn.close()
+
+    def _filtered_students_query(self, matricula, apellido, project_id, event_id, sort_by, sort_dir, limit, offset, include_total=False):
         where_clause, params = self._student_filter_where(matricula, apellido, project_id, event_id)
-        query = self._filtered_students_select(where_clause, sort_by, sort_dir)
+        query = self._filtered_students_select(where_clause, sort_by, sort_dir, include_total)
         if limit is not None:
             query += " LIMIT %s OFFSET %s"
             params.extend([int(limit), int(offset or 0)])
         return query, params
 
-    def _filtered_students_select(self, where_clause, sort_by, sort_dir):
+    def _filtered_students_select(self, where_clause, sort_by, sort_dir, include_total=False):
         sort_expression = self._student_sort_expression(sort_by)
         direction = 'DESC' if str(sort_dir).lower() == 'desc' else 'ASC'
+        total_column = ", COUNT(*) OVER() AS total_count" if include_total else ""
         return f"""
             SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
                    s.project_id, s.event_id, COALESCE(p.participant_type, 'alumno'), pr.name AS project_name,
-                   cr.token AS credential_token, cr.qr_path AS credential_qr_path
+                   cr.token AS credential_token, cr.qr_path AS credential_qr_path{total_column}
             FROM students s
             LEFT JOIN participants p ON p.legacy_student_id = s.id
             LEFT JOIN projects pr ON s.project_id = pr.id

@@ -1192,10 +1192,13 @@ def valid_sort_dir(sort_dir):
 
 
 def get_participant_page(filters):
-    total = count_filtered_students(filters)
+    page = max(1, filters["page"])
+    rows, total = fetch_filtered_students_page(filters, page)
+    if not rows and page > 1:
+        total = count_filtered_students(filters)
+        page = max(1, min(page, max((total + filters["per_page"] - 1) // filters["per_page"], 1)))
+        rows, total = fetch_filtered_students_page(filters, page)
     total_pages = max((total + filters["per_page"] - 1) // filters["per_page"], 1)
-    page = max(1, min(filters["page"], total_pages))
-    rows = fetch_filtered_students(filters, page)
     return {"rows": rows, "page": page, "total_pages": total_pages}
 
 
@@ -1219,6 +1222,19 @@ def fetch_filtered_students(filters, page):
         return []
     offset = (page - 1) * filters["per_page"]
     return db_manager.get_all_students_filtered(
+        *student_filter_args(filters),
+        filters["sort_by"],
+        filters["sort_dir"],
+        filters["per_page"],
+        offset,
+    )
+
+
+def fetch_filtered_students_page(filters, page):
+    if not filters["event_id_filter"]:
+        return [], 0
+    offset = (page - 1) * filters["per_page"]
+    return db_manager.get_students_filtered_page(
         *student_filter_args(filters),
         filters["sort_by"],
         filters["sort_dir"],
