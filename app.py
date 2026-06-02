@@ -1173,6 +1173,7 @@ def get_participant_filters():
         "event_id_filter": request.args.get("event_id", ""),
         "sort_by": valid_sort(request.args.get("sort", "proyecto")),
         "sort_dir": valid_sort_dir(request.args.get("dir", "asc")),
+        "show_details": request.args.get("details") == "1",
         "page": request.args.get("page", 1, type=int),
         "per_page": 10,
     }
@@ -1225,7 +1226,7 @@ def fetch_filtered_students(filters, page):
 
 def build_data_context(filters, page_data):
     projects = db_manager.get_projects_by_event(filters["event_id_filter"]) if filters["event_id_filter"] else []
-    students = build_student_rows(page_data["rows"], projects)
+    students = build_student_rows(page_data["rows"], projects, filters["show_details"])
     return {
         "students": students,
         "projects": projects,
@@ -1237,10 +1238,16 @@ def build_data_context(filters, page_data):
     }
 
 
-def build_student_rows(students, projects):
-    custom_values = db_manager.get_field_values_by_student_ids([student[0] for student in students])
+def build_student_rows(students, projects, include_details=False):
+    custom_values = get_custom_values_for_rows(students, include_details)
     project_names = {project[0]: project[1] for project in projects}
     return [build_student_row(student, custom_values, project_names) for student in students]
+
+
+def get_custom_values_for_rows(students, include_details):
+    if not include_details:
+        return {}
+    return db_manager.get_field_values_by_student_ids([student[0] for student in students])
 
 
 def build_student_row(student, custom_values, project_names):

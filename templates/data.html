@@ -4,7 +4,7 @@
 {% block content %}
 {% macro sort_link(key, label) -%}
     {% set next_dir = 'desc' if sort_by == key and sort_dir == 'asc' else 'asc' %}
-    <a class="text-slate-900 text-decoration-none" href="{{ url_for('data', page=1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=key, dir=next_dir) }}">
+    <a class="text-slate-900 text-decoration-none" href="{{ url_for('data', page=1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=key, dir=next_dir, details='1' if show_details else None) }}">
         {{ label }}
         {% if sort_by == key %}
             <span aria-hidden="true">{{ '▲' if sort_dir == 'asc' else '▼' }}</span>
@@ -85,6 +85,15 @@
                 <button type="submit" class="btn btn-outline-success">Enviar credenciales</button>
                 {{ tip('Envia credenciales del evento. Si hay asesor por proyecto, agrupa envios al asesor.') }}
             </form>
+            {% if show_details %}
+            <a href="{{ url_for('data', page=page, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir) }}" class="btn btn-outline-secondary">
+                Ocultar detalles
+            </a>
+            {% else %}
+            <a href="{{ url_for('data', page=page, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir, details='1') }}" class="btn btn-outline-secondary">
+                Cargar detalles
+            </a>
+            {% endif %}
         </div>
 
         <div class="table-responsive">
@@ -114,14 +123,16 @@
                             <td>{{ student['participant_type'] }}</td>
                             <td>{{ student['project_name'] or 'Sin proyecto' }}</td>
                             <td>
-                                {% if student['custom_fields'] %}
+                                {% if show_details and student['custom_fields'] %}
                                     <div class="small">
                                         {% for field in student['custom_fields'] %}
                                             <div><strong>{{ field['name'] }}:</strong> {{ field['value'] }}</div>
                                         {% endfor %}
                                     </div>
-                                {% else %}
+                                {% elif show_details %}
                                     <span class="text-muted">Sin datos</span>
+                                {% else %}
+                                    <span class="text-muted">No cargados</span>
                                 {% endif %}
                             </td>
                             <td>
@@ -149,7 +160,7 @@
         <nav aria-label="Paginacion de participantes">
             <ul class="pagination justify-content-center">
                 <li class="page-item {% if page == 1 %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('data', page=page-1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir) }}" aria-label="Anterior">
+                    <a class="page-link" href="{{ url_for('data', page=page-1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir, details='1' if show_details else None) }}" aria-label="Anterior">
                         <span aria-hidden="true">&laquo;</span>
                     </a>
                 </li>
@@ -157,7 +168,7 @@
                 {% for p in range(1, total_pages + 1) %}
                     {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
                         <li class="page-item {% if p == page %}active{% endif %}">
-                            <a class="page-link" href="{{ url_for('data', page=p, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir) }}">{{ p }}</a>
+                            <a class="page-link" href="{{ url_for('data', page=p, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir, details='1' if show_details else None) }}">{{ p }}</a>
                         </li>
                     {% elif p == page - 3 or p == page + 3 %}
                         <li class="page-item disabled"><span class="page-link">...</span></li>
@@ -165,7 +176,7 @@
                 {% endfor %}
 
                 <li class="page-item {% if page == total_pages %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('data', page=page+1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir) }}" aria-label="Siguiente">
+                    <a class="page-link" href="{{ url_for('data', page=page+1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir, details='1' if show_details else None) }}" aria-label="Siguiente">
                         <span aria-hidden="true">&raquo;</span>
                     </a>
                 </li>
