@@ -1749,92 +1749,107 @@ def export_pdf():
 @role_required("admin", "staff", api=True)
 def generate_report():
     try:
-        data = request.form
-        start_date = data.get("start_date") or None
-        end_date = data.get("end_date") or None
-        project_id = data.get("project_id") or None
-        event_id = data.get("event_id") or None
-        format_type = data.get("format")
-
-        if event_id:
-            if format_type == "pdf":
-                report_path = db_manager.export_event_attendance_to_pdf(event_id, project_id, start_date, end_date)
-            elif format_type == "excel":
-                report_path = db_manager.export_event_attendance_to_excel(event_id, project_id, start_date, end_date)
-            else:
-                return jsonify({"success": False, "error": "Formato no soportado"}), 400
-            return jsonify({"success": True, "report_path": report_path})
-
-        report_data = attendance_manager.get_attendance_report(start_date, end_date, project_id)
-        if not report_data:
-            return jsonify({"success": False, "error": "No hay datos para el reporte"}), 400
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_dir = "static/reports"
-        if not os.path.exists(report_dir):
-            os.makedirs(report_dir)
-
-        if format_type == "pdf":
-            report_path = os.path.join(report_dir, f"report_{timestamp}.pdf").replace("\\", "/")
-            doc = SimpleDocTemplate(report_path, pagesize=letter)
-            elements = []
-            styles = getSampleStyleSheet()
-            elements.append(Paragraph("Reporte de Asistencias - AsisTec", styles["Title"]))
-
-            table_data = [["Matricula", "Nombre", "Apellido P", "Apellido M", "Carrera", "Proyecto", "Fecha/Hora"]]
-            for row in report_data:
-                table_data.append(
-                    [
-                        row[0],
-                        row[1],
-                        row[2],
-                        row[3],
-                        row[4],
-                        row[5] or "Sin proyecto",
-                        row[6].strftime("%Y-%m-%d %H:%M:%S"),
-                    ]
-                )
-
-            table = Table(table_data)
-            table.setStyle(
-                TableStyle(
-                    [
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                        ("FONTSIZE", (0, 0), (-1, 0), 12),
-                        ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-                        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-                        ("GRID", (0, 0), (-1, -1), 1, colors.black),
-                    ]
-                )
-            )
-            elements.append(table)
-            doc.build(elements)
-        elif format_type == "excel":
-            report_path = os.path.join(report_dir, f"report_{timestamp}.xlsx").replace("\\", "/")
-            workbook = xlsxwriter.Workbook(report_path)
-            worksheet = workbook.add_worksheet()
-            worksheet.write("A1", "Reporte de Asistencias - AsisTec")
-            headers = ["Matricula", "Nombre", "Apellido P", "Apellido M", "Carrera", "Proyecto", "Fecha/Hora"]
-            for col, header in enumerate(headers):
-                worksheet.write(1, col, header)
-            for row_idx, row in enumerate(report_data, 2):
-                worksheet.write(row_idx, 0, row[0])
-                worksheet.write(row_idx, 1, row[1])
-                worksheet.write(row_idx, 2, row[2])
-                worksheet.write(row_idx, 3, row[3])
-                worksheet.write(row_idx, 4, row[4])
-                worksheet.write(row_idx, 5, row[5] or "Sin proyecto")
-                worksheet.write(row_idx, 6, row[6].strftime("%Y-%m-%d %H:%M:%S"))
-            workbook.close()
-        else:
-            return jsonify({"success": False, "error": "Formato no soportado"}), 400
-
+        report_path = build_requested_report(request.form)
         return jsonify({"success": True, "report_path": report_path})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+def build_requested_report(data):
+    params = report_request_params(data)
+    if params["event_id"]:
+        return build_event_report(params)
+    return build_legacy_report(params)
+
+
+def report_request_params(data):
+    return {
+        "start_date": data.get("start_date") or None,
+        "end_date": data.get("end_date") or None,
+        "project_id": data.get("project_id") or None,
+        "event_id": data.get("event_id") or None,
+        "format": data.get("format"),
+    }
+
+
+def build_event_report(params):
+    if params["format"] == "pdf":
+        return db_manager.export_event_attendance_to_pdf(params["event_id"], params["project_id"], params["start_date"], params["end_date"])
+    if params["format"] == "excel":
+        return db_manager.export_event_attendance_to_excel(params["event_id"], params["project_id"], params["start_date"], params["end_date"])
+    raise ValueError("Formato no soportado")
+
+
+def build_legacy_report(params):
+    report_data = attendance_manager.get_attendance_report(params["start_date"], params["end_date"], params["project_id"])
+    if not report_data:
+        raise ValueError("No hay datos para el reporte")
+    if params["format"] == "pdf":
+        return build_legacy_report_pdf(report_data)
+    if params["format"] == "excel":
+        return build_legacy_report_excel(report_data)
+    raise ValueError("Formato no soportado")
+
+
+def legacy_report_path(extension):
+    return os.path.join(ensure_report_dir(), f"report_{timestamp_slug()}.{extension}").replace("\\", "/")
+
+
+def build_legacy_report_pdf(report_data):
+    report_path = legacy_report_path("pdf")
+    doc = SimpleDocTemplate(report_path, pagesize=letter)
+    doc.build(legacy_report_pdf_elements(report_data))
+    return report_path
+
+
+def legacy_report_pdf_elements(report_data):
+    styles = getSampleStyleSheet()
+    table = Table(legacy_report_table_data(report_data))
+    table.setStyle(legacy_report_table_style())
+    return [Paragraph("Reporte de Asistencias - AsisTec", styles["Title"]), table]
+
+
+def legacy_report_table_data(report_data):
+    headers = ["Matricula", "Nombre", "Apellido P", "Apellido M", "Carrera", "Proyecto", "Fecha/Hora"]
+    return [headers] + [legacy_report_row(row) for row in report_data]
+
+
+def legacy_report_row(row):
+    return [row[0], row[1], row[2], row[3], row[4], row[5] or "Sin proyecto", row[6].strftime("%Y-%m-%d %H:%M:%S")]
+
+
+def legacy_report_table_style():
+    return TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 1, colors.black),
+    ])
+
+
+def build_legacy_report_excel(report_data):
+    report_path = legacy_report_path("xlsx")
+    workbook = xlsxwriter.Workbook(report_path)
+    write_legacy_report_sheet(workbook, report_data)
+    workbook.close()
+    return report_path
+
+
+def write_legacy_report_sheet(workbook, report_data):
+    worksheet = workbook.add_worksheet()
+    worksheet.write("A1", "Reporte de Asistencias - AsisTec")
+    for col, header in enumerate(legacy_report_table_data([])[0]):
+        worksheet.write(1, col, header)
+    for row_idx, row in enumerate(report_data, 2):
+        write_legacy_report_excel_row(worksheet, row_idx, row)
+
+
+def write_legacy_report_excel_row(worksheet, row_idx, row):
+    for col, value in enumerate(legacy_report_row(row)):
+        worksheet.write(row_idx, col, value)
 
 
 if __name__ == "__main__":
