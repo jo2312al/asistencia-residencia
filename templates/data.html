@@ -108,7 +108,7 @@
                         <th scope="col">{{ sort_link('tipo', 'Tipo') }}</th>
                         <th scope="col">{{ sort_link('proyecto', 'Proyecto') }}</th>
                         <th scope="col">Datos adicionales</th>
-                        <th scope="col">QR</th>
+                        <th scope="col">Credenciales</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -135,15 +135,15 @@
                                     <span class="text-muted">No cargados</span>
                                 {% endif %}
                             </td>
-                            <td>
-                                {% if student['qr_path'] %}
-                                    <a href="{{ student['qr_path'] }}" download="{{ student['credential_token'] }}.png">
-                                        <img src="{{ student['qr_path'] }}" alt="QR {{ student['credential_token'] }}" width="50" height="50">
-                                        <br>Descargar
+                            <td class="text-nowrap">
+                                <div class="d-flex flex-column gap-2">
+                                    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('download_student_credential_pdf', student_id=student['id']) }}">
+                                        Credencial
                                     </a>
-                                {% else %}
-                                    <span class="text-muted">No disponible</span>
-                                {% endif %}
+                                    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('download_student_credential_rect_pdf', student_id=student['id']) }}">
+                                        Horizontal
+                                    </a>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}

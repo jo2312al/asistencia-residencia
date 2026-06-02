@@ -8,6 +8,8 @@ from datetime import datetime
 from email.message import EmailMessage
 from functools import wraps
 from time import monotonic
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 
 import mysql.connector
 import pandas as pd
@@ -167,6 +169,9 @@ def send_registered_credential_silently(event_id, project_id, participant_type, 
 
 qr_manager = QRManager()
 attendance_manager = AttendanceManager(db_manager)
+qr_background_executor = ThreadPoolExecutor(max_workers=int(os.getenv("QR_BACKGROUND_WORKERS", "2")))
+qr_background_submitted = set()
+qr_background_lock = Lock()
 
 
 def ensure_credential_qr(credential):
@@ -220,6 +225,54 @@ def ensure_row_qr(row, qr_tool=None):
         row.get("participant_type") or "alumno",
     )
     return ensure_student_qr(student, qr_tool)
+
+
+def student_dict_to_tuple(student):
+    return (
+        student["id"], student["first_name"], student["last_name_p"], student["last_name_m"],
+        student["matricula"], student["carrera"], student.get("project_id"), student.get("event_id"),
+        student.get("participant_type") or "alumno", student.get("project_name"),
+    )
+
+
+def queue_qr_generation(students):
+    for student in students:
+        if row_needs_qr(student):
+            submit_qr_generation(tuple(student[:9]))
+
+
+def row_needs_qr(student):
+    token = student[10] if len(student) > 10 else None
+    qr_path = student[11] if len(student) > 11 else None
+    return not token or not qr_path
+
+
+def submit_qr_generation(student):
+    key = student[0]
+    if not mark_qr_job_submitted(key):
+        return
+    future = qr_background_executor.submit(generate_student_qr_background, student)
+    future.add_done_callback(lambda _: unmark_qr_job_submitted(key))
+
+
+def mark_qr_job_submitted(key):
+    with qr_background_lock:
+        if key in qr_background_submitted:
+            return False
+        qr_background_submitted.add(key)
+        return True
+
+
+def unmark_qr_job_submitted(key):
+    with qr_background_lock:
+        qr_background_submitted.discard(key)
+
+
+def generate_student_qr_background(student):
+    try:
+        ensure_student_qr(student, QRManager())
+    except Exception:
+        app.logger.exception("No se pudo generar QR en segundo plano para %s", student[0])
 
 
 def build_credential_card(student, styles, cell_width, cell_height):
@@ -1245,6 +1298,7 @@ def fetch_filtered_students_page(filters, page):
 
 def build_data_context(filters, page_data):
     projects = cached_projects_by_event(filters["event_id_filter"]) if filters["event_id_filter"] else []
+    queue_qr_generation(page_data["rows"])
     students = build_student_rows(page_data["rows"], projects, filters["show_details"])
     return {
         "students": students,
@@ -1325,6 +1379,61 @@ def student_project_name(student, project_names):
     if len(student) > 9 and student[9]:
         return student[9]
     return project_names.get(student[6])
+
+
+@app.route("/participants/<path:student_id>/credential.pdf")
+@login_required
+@role_required("admin", "staff")
+def download_student_credential_pdf(student_id):
+    return download_student_credential(student_id, "standard")
+
+
+@app.route("/participants/<path:student_id>/credential_horizontal.pdf")
+@login_required
+@role_required("admin", "staff")
+def download_student_credential_rect_pdf(student_id):
+    return download_student_credential(student_id, "horizontal")
+
+
+def download_student_credential(student_id, layout):
+    student = db_manager.get_student_by_id(student_id)
+    if not student:
+        flash("Participante no encontrado", "warning")
+        return redirect(url_for("data"))
+    data = build_single_credential_student(student)
+    pdf = build_single_credential_pdf(data, layout)
+    return send_single_credential(pdf, data, layout)
+
+
+def build_single_credential_student(student):
+    qr_path, credential_token, is_legacy_qr = ensure_student_qr(student_dict_to_tuple(student), QRManager())
+    project_id = student.get("project_id")
+    return {
+        "name": f"{student['first_name']} {student['last_name_p']} {student['last_name_m']}",
+        "matricula": student["matricula"],
+        "credential_token": credential_token or "Legacy",
+        "is_legacy_qr": is_legacy_qr,
+        "qr_path": qr_path,
+        "project_id": project_id,
+        "project_name": student.get("project_name") or "Sin proyecto",
+        "project_number": (project_id - 1) if project_id else None,
+    }
+
+
+def build_single_credential_pdf(student, layout):
+    pdf = BytesIO()
+    if layout == "horizontal":
+        build_rectangular_credentials_pdf([student], pdf)
+    else:
+        build_standard_credentials_pdf([student], pdf)
+    pdf.seek(0)
+    return pdf
+
+
+def send_single_credential(pdf, student, layout):
+    suffix = "horizontal" if layout == "horizontal" else "vertical"
+    name = safe_filename(student.get("matricula") or student.get("credential_token"), "credencial")
+    return send_file(pdf, mimetype="application/pdf", as_attachment=True, download_name=f"{name}_{suffix}.pdf")
 
 
 @app.route("/download_all_qrs_pdf")
