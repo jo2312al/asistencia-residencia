@@ -1159,97 +1159,114 @@ def reports():
 @login_required
 @role_required("admin", "staff")
 def data():
-    matricula_search = request.args.get("matricula", "").strip()
-    apellido_p_search = request.args.get("apellido_p", "").strip()
-    project_id_filter = request.args.get("project_id", "")
-    event_id_filter = request.args.get("event_id", "")
-    sort_by = request.args.get("sort", "proyecto")
-    sort_dir = request.args.get("dir", "asc")
-    if sort_by not in {"matricula", "nombre", "apellido_p", "apellido_m", "carrera", "tipo", "proyecto"}:
-        sort_by = "proyecto"
-    if sort_dir not in {"asc", "desc"}:
-        sort_dir = "asc"
+    filters = get_participant_filters()
+    page_data = get_participant_page(filters)
+    context = build_data_context(filters, page_data)
+    return render_template("data.html", **context)
 
-    page = request.args.get("page", 1, type=int)
-    per_page = 10
 
-    events = filter_events_for_current_user(db_manager.get_all_events())
-    selected_event = db_manager.get_event(event_id_filter) if event_id_filter else None
-    projects = db_manager.get_projects_by_event(event_id_filter) if event_id_filter else []
-    all_students = []
-    total_students = 0
-    if event_id_filter:
-        total_students = db_manager.count_students_filtered(
-            matricula_search,
-            apellido_p_search,
-            project_id_filter,
-            event_id_filter,
-        )
+def get_participant_filters():
+    return {
+        "matricula_search": request.args.get("matricula", "").strip(),
+        "apellido_p_search": request.args.get("apellido_p", "").strip(),
+        "project_id_filter": request.args.get("project_id", ""),
+        "event_id_filter": request.args.get("event_id", ""),
+        "sort_by": valid_sort(request.args.get("sort", "proyecto")),
+        "sort_dir": valid_sort_dir(request.args.get("dir", "asc")),
+        "page": request.args.get("page", 1, type=int),
+        "per_page": 10,
+    }
 
-    total_pages = max((total_students + per_page - 1) // per_page, 1)
-    page = max(1, min(page, total_pages))
 
-    start = (page - 1) * per_page
-    if event_id_filter:
-        all_students = db_manager.get_all_students_filtered(
-            matricula_search,
-            apellido_p_search,
-            project_id_filter,
-            event_id_filter,
-            sort_by,
-            sort_dir,
-            per_page,
-            start,
-        )
+def valid_sort(sort_by):
+    allowed = {"matricula", "nombre", "apellido_p", "apellido_m", "carrera", "tipo", "proyecto"}
+    return sort_by if sort_by in allowed else "proyecto"
 
-    students_paginated = all_students
-    custom_values_by_student = db_manager.get_field_values_by_student_ids([student[0] for student in students_paginated])
 
-    students_with_qr = []
-    for student in students_paginated:
-        matricula = student[4]
-        qr_path, credential_token, is_legacy_qr = ensure_student_qr(student)
+def valid_sort_dir(sort_dir):
+    return sort_dir if sort_dir in {"asc", "desc"} else "asc"
 
-        project_name = None
-        if student[6]:
-            for project in projects:
-                if project[0] == student[6]:
-                    project_name = project[1]
-                    break
 
-        student_dict = {
-            "id": student[0],
-            "first_name": student[1],
-            "last_name_p": student[2],
-            "last_name_m": student[3],
-            "matricula": student[4],
-            "carrera": student[5],
-            "project_id": student[6],
-            "event_id": student[7] if len(student) > 7 else None,
-            "participant_type": student[8] if len(student) > 8 else "alumno",
-            "project_name": student[9] if len(student) > 9 and student[9] else project_name,
-            "credential_token": credential_token or "Legacy",
-            "is_legacy_qr": is_legacy_qr,
-            "qr_path": qr_path if os.path.exists(qr_path) else None,
-            "custom_fields": custom_values_by_student.get(student[0], []),
-        }
-        students_with_qr.append(student_dict)
+def get_participant_page(filters):
+    total = count_filtered_students(filters)
+    total_pages = max((total + filters["per_page"] - 1) // filters["per_page"], 1)
+    page = max(1, min(filters["page"], total_pages))
+    rows = fetch_filtered_students(filters, page)
+    return {"rows": rows, "page": page, "total_pages": total_pages}
 
-    return render_template(
-        "data.html",
-        students=students_with_qr,
-        projects=projects,
-        events=events,
-        page=page,
-        total_pages=total_pages,
-        matricula_search=matricula_search,
-        apellido_p_search=apellido_p_search,
-        project_id_filter=project_id_filter,
-        event_id_filter=event_id_filter,
-        selected_event=selected_event,
-        sort_by=sort_by,
-        sort_dir=sort_dir,
+
+def count_filtered_students(filters):
+    if not filters["event_id_filter"]:
+        return 0
+    return db_manager.count_students_filtered(*student_filter_args(filters))
+
+
+def student_filter_args(filters):
+    return (
+        filters["matricula_search"],
+        filters["apellido_p_search"],
+        filters["project_id_filter"],
+        filters["event_id_filter"],
     )
+
+
+def fetch_filtered_students(filters, page):
+    if not filters["event_id_filter"]:
+        return []
+    offset = (page - 1) * filters["per_page"]
+    return db_manager.get_all_students_filtered(
+        *student_filter_args(filters),
+        filters["sort_by"],
+        filters["sort_dir"],
+        filters["per_page"],
+        offset,
+    )
+
+
+def build_data_context(filters, page_data):
+    projects = db_manager.get_projects_by_event(filters["event_id_filter"]) if filters["event_id_filter"] else []
+    students = build_student_rows(page_data["rows"], projects)
+    return {
+        "students": students,
+        "projects": projects,
+        "events": filter_events_for_current_user(db_manager.get_all_events()),
+        "page": page_data["page"],
+        "total_pages": page_data["total_pages"],
+        "selected_event": db_manager.get_event(filters["event_id_filter"]) if filters["event_id_filter"] else None,
+        **filters,
+    }
+
+
+def build_student_rows(students, projects):
+    custom_values = db_manager.get_field_values_by_student_ids([student[0] for student in students])
+    project_names = {project[0]: project[1] for project in projects}
+    return [build_student_row(student, custom_values, project_names) for student in students]
+
+
+def build_student_row(student, custom_values, project_names):
+    qr_path, credential_token, is_legacy_qr = ensure_student_qr(student)
+    return {
+        "id": student[0],
+        "first_name": student[1],
+        "last_name_p": student[2],
+        "last_name_m": student[3],
+        "matricula": student[4],
+        "carrera": student[5],
+        "project_id": student[6],
+        "event_id": student[7] if len(student) > 7 else None,
+        "participant_type": student[8] if len(student) > 8 else "alumno",
+        "project_name": student_project_name(student, project_names),
+        "credential_token": credential_token or "Legacy",
+        "is_legacy_qr": is_legacy_qr,
+        "qr_path": qr_path if os.path.exists(qr_path) else None,
+        "custom_fields": custom_values.get(student[0], []),
+    }
+
+
+def student_project_name(student, project_names):
+    if len(student) > 9 and student[9]:
+        return student[9]
+    return project_names.get(student[6])
 
 
 @app.route("/download_all_qrs_pdf")
@@ -1304,44 +1321,63 @@ def download_credentials_by_project():
         flash("No hay credenciales para descargar", "warning")
         return redirect(url_for("data", event_id=event_id) if event_id else url_for("data"))
 
-    grouped_by_project = {}
-    for student in student_data:
-        key = student.get("project_id") or "sin_proyecto"
-        grouped_by_project.setdefault(
-            key,
-            {
-                "name": student.get("project_name") or "Sin proyecto",
-                "students": [],
-            },
-        )
-        grouped_by_project[key]["students"].append(student)
-
-    report_dir = ensure_report_dir()
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    zip_path = os.path.join(report_dir, f"credenciales_por_proyecto_{timestamp}.zip").replace("\\", "/")
-    used_names = set()
-
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for project_key, project in grouped_by_project.items():
-            pdf_buffer = BytesIO()
-            build_rectangular_credentials_pdf(project["students"], pdf_buffer)
-            pdf_buffer.seek(0)
-
-            base_name = safe_filename(project["name"], f"proyecto_{project_key}")
-            file_name = f"{base_name}.pdf"
-            counter = 2
-            while file_name in used_names:
-                file_name = f"{base_name}_{counter}.pdf"
-                counter += 1
-            used_names.add(file_name)
-            zf.writestr(file_name, pdf_buffer.getvalue())
-
+    timestamp = timestamp_slug()
+    zip_path = build_project_credentials_zip(student_data, timestamp)
     return send_file(
         zip_path,
         mimetype="application/zip",
         as_attachment=True,
         download_name=f"credenciales_por_proyecto_{timestamp}.zip",
     )
+
+
+def timestamp_slug():
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def build_project_credentials_zip(student_data, timestamp):
+    zip_path = os.path.join(ensure_report_dir(), f"credenciales_por_proyecto_{timestamp}.zip").replace("\\", "/")
+    grouped_projects = group_students_by_project(student_data)
+    write_project_zip(zip_path, grouped_projects)
+    return zip_path
+
+
+def group_students_by_project(student_data):
+    grouped = {}
+    for student in student_data:
+        add_student_to_project_group(grouped, student)
+    return grouped
+
+
+def add_student_to_project_group(grouped, student):
+    key = student.get("project_id") or "sin_proyecto"
+    grouped.setdefault(key, {"name": student.get("project_name") or "Sin proyecto", "students": []})
+    grouped[key]["students"].append(student)
+
+
+def write_project_zip(zip_path, grouped_projects):
+    used_names = set()
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for project_key, project in grouped_projects.items():
+            write_project_pdf_to_zip(zf, project_key, project, used_names)
+
+
+def write_project_pdf_to_zip(zf, project_key, project, used_names):
+    pdf_buffer = BytesIO()
+    build_rectangular_credentials_pdf(project["students"], pdf_buffer)
+    file_name = unique_project_pdf_name(project, project_key, used_names)
+    zf.writestr(file_name, pdf_buffer.getvalue())
+
+
+def unique_project_pdf_name(project, project_key, used_names):
+    base_name = safe_filename(project["name"], f"proyecto_{project_key}")
+    file_name = f"{base_name}.pdf"
+    counter = 2
+    while file_name in used_names:
+        file_name = f"{base_name}_{counter}.pdf"
+        counter += 1
+    used_names.add(file_name)
+    return file_name
 
 
 @app.route("/download_all_qrs")
