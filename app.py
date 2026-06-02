@@ -7,6 +7,7 @@ import zipfile
 from datetime import datetime
 from email.message import EmailMessage
 from functools import wraps
+from time import monotonic
 
 import mysql.connector
 import pandas as pd
@@ -32,6 +33,8 @@ ROLE_LABELS = {
     "guest": "Consulta",
 }
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_CACHE_TTL_SECONDS = int(os.getenv("DATA_CACHE_TTL_SECONDS", "30"))
+DATA_METADATA_CACHE = {}
 
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
 
@@ -1225,17 +1228,39 @@ def fetch_filtered_students(filters, page):
 
 
 def build_data_context(filters, page_data):
-    projects = db_manager.get_projects_by_event(filters["event_id_filter"]) if filters["event_id_filter"] else []
+    projects = cached_projects_by_event(filters["event_id_filter"]) if filters["event_id_filter"] else []
     students = build_student_rows(page_data["rows"], projects, filters["show_details"])
     return {
         "students": students,
         "projects": projects,
-        "events": filter_events_for_current_user(db_manager.get_all_events()),
+        "events": filter_events_for_current_user(cached_all_events()),
         "page": page_data["page"],
         "total_pages": page_data["total_pages"],
-        "selected_event": db_manager.get_event(filters["event_id_filter"]) if filters["event_id_filter"] else None,
+        "selected_event": cached_event(filters["event_id_filter"]) if filters["event_id_filter"] else None,
         **filters,
     }
+
+
+def cached_all_events():
+    return cached_metadata("events:all", db_manager.get_all_events)
+
+
+def cached_projects_by_event(event_id):
+    return cached_metadata(f"projects:{event_id}", lambda: db_manager.get_projects_by_event(event_id))
+
+
+def cached_event(event_id):
+    return cached_metadata(f"event:{event_id}", lambda: db_manager.get_event(event_id))
+
+
+def cached_metadata(key, loader):
+    cached = DATA_METADATA_CACHE.get(key)
+    now = monotonic()
+    if cached and now - cached["time"] < DATA_CACHE_TTL_SECONDS:
+        return cached["value"]
+    value = loader()
+    DATA_METADATA_CACHE[key] = {"time": now, "value": value}
+    return value
 
 
 def build_student_rows(students, projects, include_details=False):
