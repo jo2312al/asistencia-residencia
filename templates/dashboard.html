@@ -1,19 +1,19 @@
 {% extends 'base.html' %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
-<h1 class="text-center tecn-blue-text mb-4">Dashboard - AsisTec</h1>
+<h1 class="tecn-blue-text mb-4">Dashboard - AsisTec</h1>
 <div class="card shadow">
-    <div class="card-header tecn-blue text-white">
-        <h2 class="h5 mb-0">Generar Reporte de Asistencias</h2>
+    <div class="card-header">
+        <h2 class="h5 mb-0">Generar reporte de asistencias</h2>
     </div>
     <div class="card-body">
         <form id="report-form" method="POST">
             <div class="mb-3">
-                <label for="start_date" class="form-label">Fecha de Inicio</label>
+                <label for="start_date" class="form-label">Fecha de inicio</label>
                 <input type="date" class="form-control" id="start_date" name="start_date">
             </div>
             <div class="mb-3">
-                <label for="end_date" class="form-label">Fecha de Fin</label>
+                <label for="end_date" class="form-label">Fecha de fin</label>
                 <input type="date" class="form-control" id="end_date" name="end_date">
             </div>
             <div class="mb-3">
@@ -32,34 +32,9 @@
                     <option value="excel">Excel</option>
                 </select>
             </div>
-            <button type="submit" class="btn tecn-blue text-white">Generar Reporte</button>
+            <button type="submit" class="btn tecn-blue text-white" data-loading-text="Generando...">Generar reporte</button>
         </form>
         <div id="report-result" class="mt-3"></div>
     </div>
 </div>
-<script>
-    document.getElementById('report-form').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        console.log("Formulario de reporte enviado");  // Depuración
-        const formData = new FormData(this);
-        try {
-            const response = await fetch('/generate_report', {
-                method: 'POST',
-                body: formData
-            });
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const result = await response.json();
-            console.log("Respuesta de /generate_report:", result);  // Depuración
-            const resultContainer = document.getElementById('report-result');
-            if (result.success) {
-                resultContainer.innerHTML = `<p class="text-success">Reporte generado: <a href="${result.report_path}" download>Descargar</a></p>`;
-            } else {
-                resultContainer.innerHTML = `<p class="text-danger">Error: ${result.error}</p>`;
-            }
-        } catch (error) {
-            console.error("Error en fetch /generate_report:", error);
-            resultContainer.innerHTML = `<p class="text-danger">Error: ${error.message}</p>`;
-        }
-    });
-</script>
 {% endblock %}

@@ -10,6 +10,7 @@ from functools import wraps
 from time import monotonic
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
+from html import escape
 
 import mysql.connector
 import pandas as pd
@@ -18,7 +19,7 @@ from dotenv import load_dotenv
 from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
@@ -1908,16 +1909,56 @@ def legacy_report_path(extension):
 
 def build_legacy_report_pdf(report_data):
     report_path = legacy_report_path("pdf")
-    doc = SimpleDocTemplate(report_path, pagesize=letter)
+    doc = legacy_report_pdf_doc(report_path)
     doc.build(legacy_report_pdf_elements(report_data))
     return report_path
 
 
+def legacy_report_pdf_doc(report_path):
+    return SimpleDocTemplate(
+        report_path, pagesize=landscape(letter),
+        leftMargin=0.35 * inch, rightMargin=0.35 * inch,
+        topMargin=0.35 * inch, bottomMargin=0.35 * inch,
+    )
+
+
 def legacy_report_pdf_elements(report_data):
+    styles = legacy_report_pdf_styles()
+    table = legacy_report_pdf_table(report_data, styles)
+    return legacy_report_pdf_header(len(report_data), styles) + [table]
+
+
+def legacy_report_pdf_styles():
     styles = getSampleStyleSheet()
-    table = Table(legacy_report_table_data(report_data))
+    styles.add(ParagraphStyle("ReportMeta", parent=styles["Normal"], fontSize=8, textColor=colors.HexColor("#475569")))
+    styles.add(ParagraphStyle("ReportCell", parent=styles["Normal"], fontSize=6.8, leading=8, textColor=colors.HexColor("#0f172a")))
+    styles.add(ParagraphStyle("ReportHeader", parent=styles["Normal"], fontSize=7, leading=8, textColor=colors.white, alignment=1))
+    return styles
+
+
+def legacy_report_pdf_header(total, styles):
+    generated = datetime.now().strftime("%Y-%m-%d %H:%M")
+    return [
+        Paragraph("Reporte de asistencias - AsisTec", styles["Title"]),
+        Paragraph(f"Total de registros: {total} | Generado: {generated}", styles["ReportMeta"]),
+        Spacer(1, 0.12 * inch),
+    ]
+
+
+def legacy_report_pdf_table(report_data, styles):
+    rows = legacy_report_table_data(report_data)
+    table_data = [[legacy_pdf_cell(value, styles["ReportHeader" if idx == 0 else "ReportCell"]) for value in row] for idx, row in enumerate(rows)]
+    table = Table(table_data, colWidths=legacy_report_pdf_widths(), repeatRows=1)
     table.setStyle(legacy_report_table_style())
-    return [Paragraph("Reporte de Asistencias - AsisTec", styles["Title"]), table]
+    return table
+
+
+def legacy_pdf_cell(value, style):
+    return Paragraph(escape(str(value or "")), style)
+
+
+def legacy_report_pdf_widths():
+    return [value * inch for value in [0.9, 1.05, 1.0, 1.0, 1.55, 1.45, 1.15]]
 
 
 def legacy_report_table_data(report_data):
@@ -1931,11 +1972,13 @@ def legacy_report_row(row):
 
 def legacy_report_table_style():
     return TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("GRID", (0, 0), (-1, -1), 1, colors.black),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#08223c")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#dbe4ee")),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ])
 
 

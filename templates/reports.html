@@ -2,71 +2,65 @@
 {% from '_help.html' import tip %}
 {% block title %}Reportes{% endblock %}
 {% block content %}
-<h1 class="text-center tecn-blue-text mb-4">Reportes - AsisTec {{ tip('Genera reportes filtrando por evento, proyecto y rango de fechas.') }}</h1>
-<div class="card shadow">
-    <div class="card-header tecn-blue text-white">
-        <h2 class="h5 mb-0">Generar Reporte de Asistencias {{ tip('Para reportes nuevos, lo ideal es seleccionar evento. El reporte general se mantiene para datos anteriores.') }}</h2>
-    </div>
-    <div class="card-body">
-        <form id="report-form" method="POST">
-            <div class="mb-3">
-                <label for="start_date" class="form-label">Fecha de Inicio</label>
-                <input type="date" class="form-control" id="start_date" name="start_date">
-            </div>
-            <div class="mb-3">
-                <label for="end_date" class="form-label">Fecha de Fin</label>
-                <input type="date" class="form-control" id="end_date" name="end_date">
-            </div>
-            <div class="mb-3">
-                <label for="project_id" class="form-label">Proyecto {{ tip('Filtra asistencias de un proyecto dentro del evento seleccionado.') }}</label>
-                <select class="form-select" id="project_id" name="project_id">
-                    <option value="">Todos los proyectos</option>
-                    {% for project in projects %}
-                        <option value="{{ project[0] }}">{{ project[1] }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="mb-3">
-                <label for="event_id" class="form-label">Evento {{ tip('Selecciona el evento para evitar mezclar asistencias de actividades distintas.') }}</label>
-                <select class="form-select" id="event_id" name="event_id">
-                    <option value="">Todos / reporte general</option>
-                    {% for event in events %}
-                        <option value="{{ event[0] }}">{{ event[1] }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="mb-3">
-                <label for="format" class="form-label">Formato</label>
-                <select class="form-select" id="format" name="format" required>
-                    <option value="pdf">PDF</option>
-                    <option value="excel">Excel</option>
-                </select>
-            </div>
-            <button type="submit" class="btn tecn-blue text-white">Generar Reporte</button>
-        </form>
-        <div id="report-result" class="mt-3"></div>
-    </div>
+<section class="mb-6">
+    <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Asistencia</p>
+    <h1 class="tecn-blue-text !mb-1">Reportes {{ tip('Genera reportes filtrando por evento, proyecto y rango de fechas.') }}</h1>
+    <p class="text-slate-500">Selecciona filtros, genera el archivo y descargalo sin salir de esta pantalla.</p>
+</section>
+
+<div class="report-layout">
+    <section class="card report-form-card">
+        <div class="card-header">
+            <h2 class="h5 mb-0">Generar reporte {{ tip('Para reportes nuevos, lo ideal es seleccionar evento. El reporte general se mantiene para datos anteriores.') }}</h2>
+        </div>
+        <div class="card-body">
+            <form id="report-form" method="POST" class="report-form">
+                <div>
+                    <label for="event_id" class="form-label">Evento {{ tip('Selecciona el evento para evitar mezclar asistencias de actividades distintas.') }}</label>
+                    <select class="form-select" id="event_id" name="event_id">
+                        <option value="">Todos / reporte general</option>
+                        {% for event in events %}
+                            <option value="{{ event[0] }}">{{ event[1] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="project_id" class="form-label">Proyecto {{ tip('Filtra asistencias de un proyecto dentro del evento seleccionado.') }}</label>
+                    <select class="form-select" id="project_id" name="project_id">
+                        <option value="">Todos los proyectos</option>
+                        {% for project in projects %}
+                            <option value="{{ project[0] }}">{{ project[1] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="start_date" class="form-label">Fecha de inicio</label>
+                    <input type="date" class="form-control" id="start_date" name="start_date">
+                </div>
+                <div>
+                    <label for="end_date" class="form-label">Fecha de fin</label>
+                    <input type="date" class="form-control" id="end_date" name="end_date">
+                </div>
+                <div>
+                    <label for="format" class="form-label">Formato</label>
+                    <select class="form-select" id="format" name="format" required>
+                        <option value="pdf">PDF</option>
+                        <option value="excel">Excel</option>
+                    </select>
+                </div>
+                <div class="report-submit">
+                    <button type="submit" class="btn tecn-blue text-white" data-loading-text="Generando...">Generar reporte</button>
+                </div>
+            </form>
+        </div>
+    </section>
+
+    <aside class="report-result-card" id="report-result">
+        <div class="report-empty">
+            <span class="report-icon">PDF</span>
+            <h2 class="h5 mb-1">Reporte listo para descargar</h2>
+            <p class="text-muted mb-0">Cuando generes un archivo, el enlace aparecera aqui.</p>
+        </div>
+    </aside>
 </div>
-<script>
-    document.getElementById('report-form').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const formData = new FormData(this);
-        try {
-            const response = await fetch('/generate_report', {
-                method: 'POST',
-                body: formData
-            });
-            if (!response.ok) throw new Error('Error en el servidor');
-            const result = await response.json();
-            const resultContainer = document.getElementById('report-result');
-            if (result.success) {
-                resultContainer.innerHTML = `<p class="text-success">Reporte generado: <a href="${result.report_path}" download>Descargar</a></p>`;
-            } else {
-                resultContainer.innerHTML = `<p class="text-danger">Error: ${result.error}</p>`;
-            }
-        } catch (error) {
-            document.getElementById('report-result').innerHTML = `<p class="text-danger">Error: ${error.message}</p>`;
-        }
-    });
-</script>
 {% endblock %}

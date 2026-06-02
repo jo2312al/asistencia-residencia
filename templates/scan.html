@@ -8,49 +8,67 @@
     <p class="text-slate-500">Selecciona el evento activo y escanea la credencial del participante.</p>
 </section>
 
-<div class="card">
-    <div class="card-header">
-        <h2 class="h5 mb-0">Escaner de asistencia {{ tip('El QR contiene un token, no datos personales. El sistema busca ese token y registra asistencia.') }}</h2>
-    </div>
-    <div class="card-body">
-        <div class="row g-3 mb-4">
-            <div class="col-md-7">
-                <label for="event_id" class="form-label">Evento {{ tip('Si lo dejas en registro general, la asistencia no quedara amarrada a un evento especifico.') }}</label>
-                <select class="form-select" id="event_id" name="event_id">
-                    <option value="">Registro general</option>
-                    {% for event in events %}
-                    <option value="{{ event[0] }}">{{ event[1] }}{% if event[2] %} - {{ event[2] }}{% endif %}{% if event[3] %} ({{ event[3] }}){% endif %}</option>
-                    {% endfor %}
-                </select>
+<div class="scanner-layout">
+    <section class="card scanner-main">
+        <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <h2 class="h5 mb-0">Escaner de asistencia {{ tip('El QR contiene un token, no datos personales. El sistema busca ese token y registra asistencia.') }}</h2>
+            <span id="scanner-pill" class="scanner-pill scanner-pill-idle">Preparando</span>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 mb-4">
+                <div class="col-lg-7">
+                    <label for="event_id" class="form-label">Evento {{ tip('Si lo dejas en registro general, la asistencia no quedara amarrada a un evento especifico.') }}</label>
+                    <select class="form-select" id="event_id" name="event_id">
+                        <option value="">Registro general</option>
+                        {% for event in events %}
+                        <option value="{{ event[0] }}">{{ event[1] }}{% if event[2] %} - {{ event[2] }}{% endif %}{% if event[3] %} ({{ event[3] }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-lg-5">
+                    <label for="attendance_event_type" class="form-label">Tipo de asistencia {{ tip('Usalo para separar entrada, salida, taller, conferencia o entrega de material.') }}</label>
+                    <select class="form-select" id="attendance_event_type" name="event_type">
+                        <option value="entrada">Entrada</option>
+                        <option value="salida">Salida</option>
+                        <option value="taller">Taller</option>
+                        <option value="conferencia">Conferencia</option>
+                        <option value="material">Entrega de material</option>
+                    </select>
+                </div>
             </div>
-            <div class="col-md-5">
-                <label for="attendance_event_type" class="form-label">Tipo de asistencia {{ tip('Usalo para separar entrada, salida, taller, conferencia o entrega de material.') }}</label>
-                <select class="form-select" id="attendance_event_type" name="event_type">
-                    <option value="entrada">Entrada</option>
-                    <option value="salida">Salida</option>
-                    <option value="taller">Taller</option>
-                    <option value="conferencia">Conferencia</option>
-                    <option value="material">Entrega de material</option>
-                </select>
+            <div class="scanner-video-frame">
+                <video id="qr-video" autoplay playsinline muted></video>
+                <div class="scanner-reticle" aria-hidden="true"></div>
+            </div>
+            <canvas id="qr-canvas" class="d-none"></canvas>
+            <div class="scanner-actions">
+                <button type="button" class="btn btn-outline-primary" id="restart-scanner-btn">Reiniciar camara</button>
+                <button type="button" class="btn btn-outline-secondary" id="pause-scanner-btn">Pausar</button>
             </div>
         </div>
-        <div class="mx-auto max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-slate-950">
-            <video id="qr-video" class="w-100" autoplay playsinline></video>
-        </div>
-        <canvas id="qr-canvas" style="display: none;"></canvas>
-        <div class="mt-3 d-flex flex-wrap gap-2">
-            <button type="button" class="btn btn-outline-primary" id="restart-scanner-btn">Reiniciar camara</button>
-        </div>
-        <div id="qr-result" class="mt-3"></div>
+    </section>
 
-        <form id="manual-qr-form" class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+    <aside class="scanner-side">
+        <div id="qr-result" class="scanner-status scanner-status-info">
+            Camara lista para iniciar.
+        </div>
+        <form id="manual-qr-form" class="scanner-manual">
             <label for="manual_qr_data" class="form-label">Captura manual</label>
             <div class="input-group">
-                <input type="text" class="form-control" id="manual_qr_data" placeholder="Token de credencial o matricula">
+                <input type="text" class="form-control" id="manual_qr_data" placeholder="Token o matricula">
                 <button class="btn btn-primary" type="submit">Registrar</button>
             </div>
         </form>
-    </div>
+        <div class="scanner-history">
+            <div class="d-flex align-items-center justify-content-between gap-2">
+                <h3 class="h6 mb-0">Ultimos registros</h3>
+                <span class="text-muted small" id="scan-count">0</span>
+            </div>
+            <div id="scan-history-list" class="scanner-history-list">
+                <p class="text-muted mb-0">Aun no hay registros en esta sesion.</p>
+            </div>
+        </div>
+    </aside>
 </div>
 
 <div class="modal fade" id="qrModal" tabindex="-1" aria-labelledby="qrModalLabel" aria-hidden="true">

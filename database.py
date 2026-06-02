@@ -8,10 +8,12 @@ import hashlib
 import secrets
 import unicodedata
 from datetime import datetime
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+from html import escape
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
 import xlsxwriter
 from werkzeug.security import generate_password_hash
 
@@ -1708,31 +1710,95 @@ class DatabaseManager:
             os.makedirs(report_dir)
         report_path = os.path.join(report_dir, f'event_report_{timestamp}.pdf').replace('\\', '/')
 
-        doc = SimpleDocTemplate(report_path, pagesize=letter)
-        elements = []
-        styles = getSampleStyleSheet()
-        elements.append(Paragraph("Reporte de Asistencias por Evento", styles['Title']))
-
-        data = [['Matricula', 'Nombre', 'Apellido P', 'Apellido M', 'Carrera', 'Proyecto', 'Evento', 'Tipo', 'Fecha/Hora']]
-        for row in report_data:
-            data.append([
-                row[0], row[1], row[2], row[3], row[4], row[5] or 'Sin proyecto',
-                row[6] or 'Sin evento', row[7], row[8].strftime('%Y-%m-%d %H:%M:%S') if hasattr(row[8], 'strftime') else row[8]
-            ])
-
-        table = Table(data, repeatRows=1)
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 7),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ]))
-        elements.append(table)
+        doc = self._attendance_pdf_doc(report_path)
+        elements = self._event_attendance_pdf_elements(report_data, project_id, start_date, end_date)
         doc.build(elements)
         return report_path
+
+    def _attendance_pdf_doc(self, report_path):
+        return SimpleDocTemplate(
+            report_path, pagesize=landscape(letter),
+            leftMargin=0.35 * inch, rightMargin=0.35 * inch,
+            topMargin=0.35 * inch, bottomMargin=0.35 * inch,
+        )
+
+    def _event_attendance_pdf_elements(self, report_data, project_id, start_date, end_date):
+        styles = self._attendance_pdf_styles()
+        filters = self._event_report_filters(report_data, project_id, start_date, end_date)
+        table = self._attendance_pdf_table(self._event_report_table_data(report_data), self._event_report_widths())
+        return self._attendance_pdf_header("Reporte de asistencias por evento", len(report_data), filters, styles) + [table]
+
+    def _attendance_pdf_styles(self):
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle("ReportMeta", parent=styles["Normal"], fontSize=8, textColor=colors.HexColor("#475569")))
+        styles.add(ParagraphStyle("ReportCell", parent=styles["Normal"], fontSize=6.8, leading=8, textColor=colors.HexColor("#0f172a")))
+        styles.add(ParagraphStyle("ReportHeader", parent=styles["Normal"], fontSize=7, leading=8, textColor=colors.white, alignment=1))
+        return styles
+
+    def _event_report_filters(self, report_data, project_id, start_date, end_date):
+        return {
+            "Evento": report_data[0][6] or "Sin evento",
+            "Proyecto": self._selected_project_name(report_data, project_id),
+            "Fechas": self._date_range_label(start_date, end_date),
+        }
+
+    def _selected_project_name(self, report_data, project_id):
+        if not project_id:
+            return "Todos"
+        return report_data[0][5] or f"Proyecto {project_id}"
+
+    def _date_range_label(self, start_date, end_date):
+        if start_date and end_date:
+            return f"{start_date} a {end_date}"
+        return start_date or end_date or "Todas"
+
+    def _attendance_pdf_header(self, title, total, filters, styles):
+        meta = " | ".join(f"{key}: {value}" for key, value in filters.items())
+        generated = datetime.now().strftime("%Y-%m-%d %H:%M")
+        return [
+            Paragraph(title, styles["Title"]),
+            Paragraph(f"Total de registros: {total} | Generado: {generated}", styles["ReportMeta"]),
+            Paragraph(meta, styles["ReportMeta"]),
+            Spacer(1, 0.12 * inch),
+        ]
+
+    def _event_report_table_data(self, report_data):
+        headers = ["Matricula", "Nombre", "Apellido P", "Apellido M", "Carrera", "Proyecto", "Evento", "Tipo", "Fecha/Hora"]
+        rows = [self._event_report_row(row) for row in report_data]
+        return [headers] + rows
+
+    def _event_report_row(self, row):
+        return [
+            row[0], row[1], row[2], row[3], row[4], row[5] or "Sin proyecto",
+            row[6] or "Sin evento", row[7] or "entrada", self._format_report_datetime(row[8]),
+        ]
+
+    def _format_report_datetime(self, value):
+        return value.strftime("%Y-%m-%d %H:%M") if hasattr(value, "strftime") else value
+
+    def _attendance_pdf_table(self, data, widths):
+        styles = self._attendance_pdf_styles()
+        table_data = [[self._pdf_cell(value, styles["ReportHeader" if row == 0 else "ReportCell"]) for value in line] for row, line in enumerate(data)]
+        table = Table(table_data, colWidths=widths, repeatRows=1)
+        table.setStyle(self._attendance_pdf_table_style())
+        return table
+
+    def _pdf_cell(self, value, style):
+        return Paragraph(escape(str(value or "")), style)
+
+    def _event_report_widths(self):
+        return [value * inch for value in [0.78, 0.9, 0.85, 0.85, 1.25, 1.15, 1.15, 0.72, 1.05]]
+
+    def _attendance_pdf_table_style(self):
+        return TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#08223c")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#dbe4ee")),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ])
 
     def export_attendance_to_pdf(self, project_id, start_date, end_date):
         conn = self.connect()
@@ -1761,38 +1827,35 @@ class DatabaseManager:
         if not report_data:
             raise ValueError("No hay datos para el reporte")
 
+        report_path = self._attendance_report_path("attendance_report", "pdf")
+        doc = self._attendance_pdf_doc(report_path)
+        elements = self._legacy_attendance_pdf_elements(report_data, project_id, start_date, end_date)
+        doc.build(elements)
+        return report_path
+
+    def _attendance_report_path(self, prefix, extension):
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         report_dir = 'static/reports'
         if not os.path.exists(report_dir):
             os.makedirs(report_dir)
-        report_path = os.path.join(report_dir, f'attendance_report_{timestamp}.pdf').replace('\\', '/')
+        return os.path.join(report_dir, f'{prefix}_{timestamp}.{extension}').replace('\\', '/')
 
-        doc = SimpleDocTemplate(report_path, pagesize=letter)
-        elements = []
-        styles = getSampleStyleSheet()
-        elements.append(Paragraph("Reporte de Asistencias - AsisTec", styles['Title']))
+    def _legacy_attendance_pdf_elements(self, report_data, project_id, start_date, end_date):
+        styles = self._attendance_pdf_styles()
+        filters = {"Proyecto": project_id or "Todos", "Fechas": self._date_range_label(start_date, end_date)}
+        table = self._attendance_pdf_table(self._legacy_report_table_data(report_data), self._legacy_report_widths())
+        return self._attendance_pdf_header("Reporte de asistencias - AsisTec", len(report_data), filters, styles) + [table]
 
-        data = [['Matrícula', 'Nombre', 'Apellido P', 'Apellido M', 'Carrera', 'Proyecto', 'Fecha/Hora']]
-        for row in report_data:
-            data.append([
-                row[0], row[1], row[2], row[3], row[4], row[5] or 'Sin proyecto', row[6].strftime('%Y-%m-%d %H:%M:%S')
-            ])
+    def _legacy_report_table_data(self, report_data):
+        headers = ["Matricula", "Nombre", "Apellido P", "Apellido M", "Carrera", "Proyecto", "Fecha/Hora"]
+        rows = [self._legacy_report_row(row) for row in report_data]
+        return [headers] + rows
 
-        table = Table(data)
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ]))
-        elements.append(table)
-        doc.build(elements)
+    def _legacy_report_row(self, row):
+        return [row[0], row[1], row[2], row[3], row[4], row[5] or "Sin proyecto", self._format_report_datetime(row[6])]
 
-        return report_path
+    def _legacy_report_widths(self):
+        return [value * inch for value in [0.9, 1.05, 1.0, 1.0, 1.55, 1.45, 1.15]]
 
     def _student_filter_where(self, matricula_search='', apellido_p_search='', project_id_filter='', event_id_filter=''):
         clauses = ["1=1"]

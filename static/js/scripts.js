@@ -21,14 +21,19 @@ function getScannerElements() {
     const canvas = document.getElementById('qr-canvas');
     const result = document.getElementById('qr-result');
     const restart = document.getElementById('restart-scanner-btn');
+    const pause = document.getElementById('pause-scanner-btn');
     const manualForm = document.getElementById('manual-qr-form');
     const manualInput = document.getElementById('manual_qr_data');
+    const pill = document.getElementById('scanner-pill');
+    const history = document.getElementById('scan-history-list');
+    const count = document.getElementById('scan-count');
     if (!video || !canvas || !result) return null;
-    return { video, canvas, result, restart, manualForm, manualInput };
+    return { video, canvas, result, restart, pause, manualForm, manualInput, pill, history, count };
 }
 
 function bindScannerControls(elements) {
     if (elements.restart) elements.restart.addEventListener('click', () => startQRScanner(elements));
+    if (elements.pause) elements.pause.addEventListener('click', () => toggleScannerPause(elements));
     if (elements.manualForm) bindManualScan(elements);
 }
 
@@ -51,6 +56,7 @@ function stopQRScanner() {
 
 async function startQRScanner(elements) {
     stopQRScanner();
+    setScannerPill(elements, 'idle', 'Abriendo camara');
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         return renderScannerStatus(elements.result, 'danger', 'El navegador no soporta acceso a la camara. Usa captura manual.');
     }
@@ -82,6 +88,8 @@ async function playScannerVideo(elements) {
         elements.video.srcObject = scannerState.stream;
         await elements.video.play();
         scannerState.active = true;
+        updatePauseButton(elements, false);
+        setScannerPill(elements, 'ready', 'Escaneando');
         renderScannerStatus(elements.result, 'info', 'Camara lista. Acerca el QR al recuadro.');
         scanQRCode(elements);
     } catch (error) {
@@ -129,12 +137,14 @@ async function readScannerFrame(elements, context, scan) {
 function onQRDetected(qrData, elements, scan) {
     console.log("QR detectado:", qrData);
     scannerState.active = false;
+    setScannerPill(elements, 'busy', 'Registrando');
     renderScannerStatus(elements.result, 'info', 'Codigo QR detectado. Registrando...');
     registerAttendance(qrData, () => resumeScanner(elements.result, scan));
 }
 
 function resumeScanner(resultContainer, scan) {
     renderScannerStatus(resultContainer, 'info', 'Listo para escanear otro codigo.');
+    setScannerPill(getScannerElements(), 'ready', 'Escaneando');
     scannerState.active = true;
     requestAnimationFrame(scan);
 }
@@ -177,7 +187,8 @@ function drawVideoFrame(video, canvas, context) {
 }
 
 function renderScannerStatus(container, type, message) {
-    container.innerHTML = `<p class="text-${type}">${escapeHtml(message)}</p>`;
+    container.className = `scanner-status scanner-status-${type}`;
+    container.innerHTML = escapeHtml(message);
 }
 
 function clearManualInput(input) {
@@ -211,12 +222,68 @@ function handleAttendanceResult(data, afterClose) {
     console.log("Respuesta de /register_attendance:", data);
     const type = data.success ? 'success' : 'danger';
     const message = data.success ? data.message : (data.error || 'No se pudo registrar');
-    showScannerModal(`<p class="text-${type}">${escapeHtml(message)}</p>`, afterClose);
+    showScannerFeedback(type, message, afterClose);
 }
 
 function handleAttendanceError(error, afterClose) {
     console.error("Error en fetch /register_attendance:", error);
-    showScannerModal(`<p class="text-danger">Error: ${escapeHtml(error.message)}</p>`, afterClose);
+    showScannerFeedback('danger', `Error: ${error.message}`, afterClose);
+}
+
+function toggleScannerPause(elements) {
+    scannerState.active = !scannerState.active;
+    updatePauseButton(elements, !scannerState.active);
+    setScannerPill(elements, scannerState.active ? 'ready' : 'idle', scannerState.active ? 'Escaneando' : 'Pausado');
+    renderScannerStatus(elements.result, 'info', scannerState.active ? 'Escaner reanudado.' : 'Escaner pausado.');
+    if (scannerState.active) scanQRCode(elements);
+}
+
+function updatePauseButton(elements, paused) {
+    if (elements.pause) elements.pause.textContent = paused ? 'Reanudar' : 'Pausar';
+}
+
+function setScannerPill(elements, type, text) {
+    if (!elements || !elements.pill) return;
+    elements.pill.className = `scanner-pill scanner-pill-${type}`;
+    elements.pill.textContent = text;
+}
+
+function showScannerFeedback(type, message, afterClose) {
+    const elements = getScannerElements();
+    if (elements) renderScannerStatus(elements.result, type, message);
+    if (elements) addScanHistory(elements, type, message);
+    notifyScanResult(type);
+    window.setTimeout(() => finishScannerFeedback(afterClose), 900);
+}
+
+function finishScannerFeedback(afterClose) {
+    if (typeof afterClose === 'function') afterClose();
+}
+
+function notifyScanResult(type) {
+    if (navigator.vibrate) navigator.vibrate(type === 'success' ? 80 : [80, 60, 80]);
+}
+
+function addScanHistory(elements, type, message) {
+    if (!elements.history) return;
+    elements.history.prepend(buildScanHistoryItem(type, message));
+    trimScanHistory(elements.history);
+    updateScanCount(elements);
+}
+
+function buildScanHistoryItem(type, message) {
+    const item = document.createElement('div');
+    item.className = `scanner-history-item scanner-history-${type}`;
+    item.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong><span>${escapeHtml(message)}</span>`;
+    return item;
+}
+
+function trimScanHistory(history) {
+    while (history.children.length > 6) history.removeChild(history.lastElementChild);
+}
+
+function updateScanCount(elements) {
+    if (elements.count) elements.count.textContent = String(elements.history.children.length);
 }
 
 function showScannerModal(html, afterClose) {
@@ -650,18 +717,42 @@ function initializeReportForm() {
 
 async function submitReport(event, form) {
     event.preventDefault();
+    const button = form.querySelector('button[type="submit"]');
+    setReportLoading(button, true);
+    renderReportLoading();
     try {
         const result = await postForm('/generate_report', form);
         renderReportResult(result);
     } catch (error) {
         console.error("Error en fetch /generate_report:", error);
-        renderElementStatus('report-result', 'danger', `Error: ${error.message}`);
+        renderReportError(error.message);
+    } finally {
+        setReportLoading(button, false);
     }
 }
 
 function renderReportResult(result) {
-    if (!result.success) return renderElementStatus('report-result', 'danger', `Error: ${result.error}`);
-    renderElementHtml('report-result', `<p class="text-success">Reporte generado: <a href="${result.report_path}" download>Descargar</a></p>`);
+    if (!result.success) return renderReportError(result.error);
+    renderElementHtml('report-result', buildReportSuccessHtml(result.report_path));
+}
+
+function setReportLoading(button, loading) {
+    if (!button) return;
+    button.disabled = loading;
+    button.textContent = loading ? (button.dataset.loadingText || 'Generando...') : 'Generar reporte';
+}
+
+function renderReportLoading() {
+    renderElementHtml('report-result', '<div class="report-loading"><span class="spinner-border spinner-border-sm"></span><strong>Generando reporte...</strong><p>Preparando el archivo con los filtros seleccionados.</p></div>');
+}
+
+function renderReportError(message) {
+    renderElementHtml('report-result', `<div class="report-alert report-alert-danger"><strong>No se pudo generar</strong><p>${escapeHtml(message || 'Error inesperado')}</p></div>`);
+}
+
+function buildReportSuccessHtml(path) {
+    const label = path.endsWith('.xlsx') ? 'Excel' : 'PDF';
+    return `<div class="report-alert report-alert-success"><span class="report-icon">${label}</span><div><strong>Reporte generado</strong><p>El archivo esta listo para descargar.</p><a class="btn btn-primary" href="${path}" download>Descargar reporte</a></div></div>`;
 }
 
 document.addEventListener('DOMContentLoaded', function() {
