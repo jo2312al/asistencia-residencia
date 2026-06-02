@@ -677,31 +677,33 @@ class DatabaseManager:
 
         placeholders = ",".join(["%s"] * len(student_ids))
         conn = mysql.connector.connect(**self.db_config)
-        c = conn.cursor()
-        c.execute(
-            f"""SELECT p.legacy_student_id, pf.name, pfv.value
-                FROM participant_field_values pfv
-                JOIN project_fields pf ON pfv.field_id = pf.id
-                JOIN participants p ON pfv.participant_id = p.id
-                WHERE p.legacy_student_id IN ({placeholders})
-                ORDER BY pf.display_order, pf.id""",
-            tuple(student_ids)
-        )
+        try:
+            c = conn.cursor()
+            c.execute(self._field_values_query(placeholders), tuple(student_ids) * 2)
+            return self._group_field_values(c.fetchall())
+        finally:
+            conn.close()
+
+    def _field_values_query(self, placeholders):
+        return f"""
+            SELECT p.legacy_student_id, pf.name, pfv.value, pf.display_order, pf.id
+            FROM participant_field_values pfv
+            JOIN project_fields pf ON pfv.field_id = pf.id
+            JOIN participants p ON pfv.participant_id = p.id
+            WHERE p.legacy_student_id IN ({placeholders})
+            UNION ALL
+            SELECT p.legacy_student_id, ef.name, pefv.value, ef.display_order, ef.id
+            FROM participant_event_field_values pefv
+            JOIN event_fields ef ON pefv.field_id = ef.id
+            JOIN participants p ON pefv.participant_id = p.id
+            WHERE p.legacy_student_id IN ({placeholders})
+            ORDER BY 4, 5
+        """
+
+    def _group_field_values(self, rows):
         values = {}
-        for student_id, name, value in c.fetchall():
+        for student_id, name, value, _, _ in rows:
             values.setdefault(student_id, []).append({"name": name, "value": value})
-        c.execute(
-            f"""SELECT p.legacy_student_id, ef.name, pefv.value
-                FROM participant_event_field_values pefv
-                JOIN event_fields ef ON pefv.field_id = ef.id
-                JOIN participants p ON pefv.participant_id = p.id
-                WHERE p.legacy_student_id IN ({placeholders})
-                ORDER BY ef.display_order, ef.id""",
-            tuple(student_ids)
-        )
-        for student_id, name, value in c.fetchall():
-            values.setdefault(student_id, []).append({"name": name, "value": value})
-        conn.close()
         return values
 
     def update_credential_qr_path(self, token, qr_path):
@@ -1812,25 +1814,25 @@ class DatabaseManager:
         return f"""
             SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
                    s.project_id, s.event_id, COALESCE(p.participant_type, 'alumno'), pr.name AS project_name,
-                   (
-                       SELECT cr.token
-                       FROM credentials cr
-                       WHERE cr.participant_id = p.id
-                       ORDER BY cr.created_at DESC
-                       LIMIT 1
-                   ) AS credential_token,
-                   (
-                       SELECT cr.qr_path
-                       FROM credentials cr
-                       WHERE cr.participant_id = p.id
-                       ORDER BY cr.created_at DESC
-                       LIMIT 1
-                   ) AS credential_qr_path
+                   cr.token AS credential_token, cr.qr_path AS credential_qr_path
             FROM students s
             LEFT JOIN participants p ON p.legacy_student_id = s.id
             LEFT JOIN projects pr ON s.project_id = pr.id
+            LEFT JOIN ({self._latest_credentials_select()}) cr ON cr.participant_id = p.id
             WHERE {where_clause}
             ORDER BY {sort_expression} {direction}, s.last_name_p ASC, s.first_name ASC, s.matricula ASC
+        """
+
+    def _latest_credentials_select(self):
+        return """
+            SELECT c.participant_id, c.token, c.qr_path
+            FROM credentials c
+            JOIN (
+                SELECT participant_id, MAX(created_at) AS created_at
+                FROM credentials
+                GROUP BY participant_id
+            ) latest ON latest.participant_id = c.participant_id
+                   AND latest.created_at = c.created_at
         """
 
     def _student_sort_expression(self, sort_by):
