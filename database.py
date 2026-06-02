@@ -1811,7 +1811,21 @@ class DatabaseManager:
         direction = 'DESC' if str(sort_dir).lower() == 'desc' else 'ASC'
         return f"""
             SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
-                   s.project_id, s.event_id, COALESCE(p.participant_type, 'alumno'), pr.name AS project_name
+                   s.project_id, s.event_id, COALESCE(p.participant_type, 'alumno'), pr.name AS project_name,
+                   (
+                       SELECT cr.token
+                       FROM credentials cr
+                       WHERE cr.participant_id = p.id
+                       ORDER BY cr.created_at DESC
+                       LIMIT 1
+                   ) AS credential_token,
+                   (
+                       SELECT cr.qr_path
+                       FROM credentials cr
+                       WHERE cr.participant_id = p.id
+                       ORDER BY cr.created_at DESC
+                       LIMIT 1
+                   ) AS credential_qr_path
             FROM students s
             LEFT JOIN participants p ON p.legacy_student_id = s.id
             LEFT JOIN projects pr ON s.project_id = pr.id

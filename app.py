@@ -1244,7 +1244,7 @@ def build_student_rows(students, projects):
 
 
 def build_student_row(student, custom_values, project_names):
-    qr_path, credential_token, is_legacy_qr = ensure_student_qr(student)
+    credential_token, qr_path = student_existing_credential(student)
     return {
         "id": student[0],
         "first_name": student[1],
@@ -1257,10 +1257,20 @@ def build_student_row(student, custom_values, project_names):
         "participant_type": student[8] if len(student) > 8 else "alumno",
         "project_name": student_project_name(student, project_names),
         "credential_token": credential_token or "Legacy",
-        "is_legacy_qr": is_legacy_qr,
+        "is_legacy_qr": not credential_token,
         "qr_path": qr_path if os.path.exists(qr_path) else None,
         "custom_fields": custom_values.get(student[0], []),
     }
+
+
+def student_existing_credential(student):
+    token = student[10] if len(student) > 10 else None
+    qr_path = student[11] if len(student) > 11 else None
+    if token and not qr_path:
+        qr_path = os.path.join("static/qr_codes", f"{token}.png").replace("\\", "/")
+    if not token:
+        qr_path = os.path.join("static/qr_codes", f"{student[4]}.png").replace("\\", "/")
+    return token, qr_path
 
 
 def student_project_name(student, project_names):
