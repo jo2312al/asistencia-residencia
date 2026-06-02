@@ -211,6 +211,7 @@ class DatabaseManager:
         self._ensure_column(c, 'attendance_events', 'credential_id', 'VARCHAR(36)')
         self._ensure_column(c, 'attendance_events', 'legacy_attendance_id', 'INT')
         self._ensure_column(c, 'attendance_events', 'event_id', 'INT NULL')
+        self._ensure_performance_indexes(c)
         conn.commit()
         conn.close()
 
@@ -242,6 +243,40 @@ class DatabaseManager:
         """, (self.db_config['database'],))
         if not cursor.fetchone()[0]:
             cursor.execute("CREATE UNIQUE INDEX uq_projects_name_event ON projects (name, event_id)")
+
+    def _ensure_performance_indexes(self, cursor):
+        indexes = [
+            ('students', 'idx_students_event_project', 'event_id, project_id'),
+            ('students', 'idx_students_event_matricula', 'event_id, matricula'),
+            ('students', 'idx_students_event_last_name', 'event_id, last_name_p, first_name'),
+            ('participants', 'idx_participants_legacy_student_fast', 'legacy_student_id'),
+            ('participants', 'idx_participants_event_project', 'event_id, project_id'),
+            ('credentials', 'idx_credentials_participant_created', 'participant_id, created_at'),
+            ('participant_field_values', 'idx_pfv_participant_field', 'participant_id, field_id'),
+            ('participant_event_field_values', 'idx_pefv_participant_field', 'participant_id, field_id'),
+            ('projects', 'idx_projects_event_name_fast', 'event_id, name'),
+        ]
+        for table_name, index_name, columns in indexes:
+            self._ensure_index(cursor, table_name, index_name, columns)
+
+    def _ensure_index(self, cursor, table_name, index_name, columns):
+        if self._index_exists(cursor, table_name, index_name):
+            return
+        try:
+            cursor.execute(f"CREATE INDEX {index_name} ON {table_name} ({columns})")
+        except Error as error:
+            if getattr(error, "errno", None) != 1061:
+                raise
+
+    def _index_exists(self, cursor, table_name, index_name):
+        cursor.execute("""
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.STATISTICS
+            WHERE TABLE_SCHEMA = %s
+              AND TABLE_NAME = %s
+              AND INDEX_NAME = %s
+        """, (self.db_config['database'], table_name, index_name))
+        return cursor.fetchone()[0] > 0
 
     def _column_exists(self, cursor, table_name, column_name):
         cursor.execute("""
