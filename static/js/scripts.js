@@ -5,7 +5,8 @@ const scannerState = {
     active: false,
     detecting: false,
     detector: null,
-    lastStatusAt: 0
+    lastStatusAt: 0,
+    feedbackTimer: null
 };
 
 function initializeQRScanner() {
@@ -27,8 +28,9 @@ function getScannerElements() {
     const pill = document.getElementById('scanner-pill');
     const history = document.getElementById('scan-history-list');
     const count = document.getElementById('scan-count');
+    const feedback = document.getElementById('scanner-feedback');
     if (!video || !canvas || !result) return null;
-    return { video, canvas, result, restart, pause, manualForm, manualInput, pill, history, count };
+    return { video, canvas, result, restart, pause, manualForm, manualInput, pill, history, count, feedback };
 }
 
 function bindScannerControls(elements) {
@@ -252,8 +254,9 @@ function showScannerFeedback(type, message, afterClose) {
     const elements = getScannerElements();
     if (elements) renderScannerStatus(elements.result, type, message);
     if (elements) addScanHistory(elements, type, message);
+    if (elements) showScannerOverlay(elements, type, message);
     notifyScanResult(type);
-    window.setTimeout(() => finishScannerFeedback(afterClose), 900);
+    window.setTimeout(() => finishScannerFeedback(afterClose), 1250);
 }
 
 function finishScannerFeedback(afterClose) {
@@ -262,6 +265,23 @@ function finishScannerFeedback(afterClose) {
 
 function notifyScanResult(type) {
     if (navigator.vibrate) navigator.vibrate(type === 'success' ? 80 : [80, 60, 80]);
+}
+
+function showScannerOverlay(elements, type, message) {
+    if (!elements.feedback) return;
+    elements.feedback.className = `scanner-feedback scanner-feedback-${type}`;
+    elements.feedback.innerHTML = overlayFeedbackHtml(type, message);
+    window.clearTimeout(scannerState.feedbackTimer);
+    scannerState.feedbackTimer = window.setTimeout(() => hideScannerOverlay(elements), 1200);
+}
+
+function overlayFeedbackHtml(type, message) {
+    const title = type === 'success' ? 'Asistencia tomada' : 'Revisar escaneo';
+    return `<strong>${title}</strong><span>${escapeHtml(message)}</span>`;
+}
+
+function hideScannerOverlay(elements) {
+    if (elements.feedback) elements.feedback.className = 'scanner-feedback scanner-feedback-hidden';
 }
 
 function addScanHistory(elements, type, message) {
