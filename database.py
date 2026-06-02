@@ -21,10 +21,22 @@ class DatabaseManager:
 
     def __init__(self, db_config):
         self.db_config = db_config
+        self.pool = self._create_pool()
         self.init_db()
 
+    def _create_pool(self):
+        pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
+        return mysql.connector.pooling.MySQLConnectionPool(
+            pool_name=f"asistec_{os.getpid()}",
+            pool_size=pool_size,
+            **self.db_config
+        )
+
+    def connect(self):
+        return self.pool.get_connection()
+
     def init_db(self):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS users (
             username VARCHAR(50) PRIMARY KEY,
@@ -259,7 +271,7 @@ class DatabaseManager:
         return role_value
 
     def get_user(self, username):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute("SELECT username, password_hash, role FROM users WHERE username = %s", (username,))
         user = c.fetchone()
@@ -268,7 +280,7 @@ class DatabaseManager:
 
     def add_user(self, username, password_hash, role='guest'):
         role_value = self.normalize_role(role)
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
@@ -278,7 +290,7 @@ class DatabaseManager:
         conn.close()
 
     def get_all_users(self):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute("SELECT username, role FROM users ORDER BY username")
         users = c.fetchall()
@@ -511,7 +523,7 @@ class DatabaseManager:
 
     def update_user_role(self, username, role):
         role_value = self.normalize_role(role)
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute("UPDATE users SET role = %s WHERE username = %s", (role_value, username))
         conn.commit()
@@ -521,7 +533,7 @@ class DatabaseManager:
 
     def ensure_user(self, username, password_hash, role='guest'):
         role_value = self.normalize_role(role)
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute("SELECT username FROM users WHERE username = %s", (username,))
         exists = c.fetchone() is not None
@@ -535,7 +547,7 @@ class DatabaseManager:
         return not exists
 
     def add_student(self, student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id, event_id=None, email=None, participant_type='alumno'):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute('''INSERT INTO students (id, first_name, last_name_p, last_name_m, matricula, carrera, event_id, project_id)
                      VALUES (%s, %s, %s, %s, %s, %s, %s, %s)''',
@@ -619,7 +631,7 @@ class DatabaseManager:
         raise ValueError("No se pudo generar un token unico para la credencial")
 
     def ensure_student_participant_credential(self, student):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         participant_id = self._ensure_participant_for_student(
             c, student[0], student[1], student[2], student[3], student[6], student[7] if len(student) > 7 else None
@@ -630,7 +642,7 @@ class DatabaseManager:
         return credential
 
     def get_participant_id_by_student_id(self, student_id):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute("SELECT id FROM participants WHERE legacy_student_id = %s", (student_id,))
         row = c.fetchone()
@@ -641,7 +653,7 @@ class DatabaseManager:
         if not participant_id or not field_values:
             return
 
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         self._save_participant_field_values(c, participant_id, field_values)
         conn.commit()
@@ -676,7 +688,7 @@ class DatabaseManager:
             return {}
 
         placeholders = ",".join(["%s"] * len(student_ids))
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         try:
             c = conn.cursor()
             c.execute(self._field_values_query(placeholders), tuple(student_ids) * 2)
@@ -707,7 +719,7 @@ class DatabaseManager:
         return values
 
     def update_credential_qr_path(self, token, qr_path):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             "UPDATE credentials SET qr_path = %s, updated_at = %s WHERE token = %s",
@@ -720,7 +732,7 @@ class DatabaseManager:
         if not credential_ids:
             return
         placeholders = ",".join(["%s"] * len(credential_ids))
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             f"UPDATE credentials SET sent_status = %s, updated_at = %s WHERE id IN ({placeholders})",
@@ -730,7 +742,7 @@ class DatabaseManager:
         conn.close()
 
     def log_email(self, event_id, recipient, subject, status, error=None):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """INSERT INTO email_logs (event_id, recipient, subject, status, error, created_at)
@@ -741,7 +753,7 @@ class DatabaseManager:
         conn.close()
 
     def get_event_credential_rows(self, event_id):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor(dictionary=True)
         c.execute(
             """SELECT p.id AS participant_id, p.full_name, p.email, p.participant_type,
@@ -761,7 +773,7 @@ class DatabaseManager:
         return rows
 
     def get_event_email_logs(self, event_id, limit=25):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """SELECT id, recipient, subject, status, error, created_at
@@ -776,7 +788,7 @@ class DatabaseManager:
         return logs
 
     def get_event_attendance_events(self, event_id, limit=25):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """SELECT ae.id, ae.event_type, ae.timestamp, p.full_name, s.matricula, pr.name
@@ -794,7 +806,7 @@ class DatabaseManager:
         return rows
 
     def get_students_for_credentials(self, event_id=None):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor(dictionary=True)
         query = """
             SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
@@ -817,7 +829,7 @@ class DatabaseManager:
         return rows
 
     def get_event_counts(self, event_id):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM students WHERE event_id = %s", (event_id,))
         participants = c.fetchone()[0]
@@ -842,7 +854,7 @@ class DatabaseManager:
         }
 
     def get_event_template(self, event_id):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor(dictionary=True)
         c.execute(
             """SELECT event_id, email_subject, email_body, credential_style, logo_filename, updated_at
@@ -868,7 +880,7 @@ class DatabaseManager:
         }
 
     def save_event_template(self, event_id, email_subject, email_body, credential_style='standard', logo_filename=None):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         now = datetime.now()
         c.execute(
@@ -887,7 +899,7 @@ class DatabaseManager:
         conn.close()
 
     def get_user_event_permissions(self, username):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """SELECT event_id
@@ -900,7 +912,7 @@ class DatabaseManager:
         return event_ids
 
     def set_user_event_permissions(self, username, event_ids):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute("DELETE FROM user_event_permissions WHERE username = %s", (username,))
         now = datetime.now()
@@ -914,7 +926,7 @@ class DatabaseManager:
         conn.close()
 
     def get_credential_by_token(self, token):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor(dictionary=True)
         c.execute(
             """SELECT c.id AS credential_id, c.token, c.status AS credential_status,
@@ -930,7 +942,7 @@ class DatabaseManager:
         return credential
 
     def record_attendance_event(self, participant_id, credential_id, legacy_attendance_id, event_type, timestamp, event_id=None):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """INSERT INTO attendance_events
@@ -942,7 +954,7 @@ class DatabaseManager:
         conn.close()
 
     def get_all_projects(self):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """SELECT p.id, p.name, p.description, e.name
@@ -954,7 +966,7 @@ class DatabaseManager:
         return projects
 
     def get_projects_by_event(self, event_id):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """SELECT id, name, description, event_id
@@ -968,7 +980,7 @@ class DatabaseManager:
         return projects
 
     def get_project(self, project_id):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """SELECT p.id, p.name, p.description, e.name
@@ -982,7 +994,7 @@ class DatabaseManager:
         return project
 
     def add_project(self, name, description=None, event_id=None):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             "INSERT INTO projects (name, description, event_id) VALUES (%s, %s, %s)",
@@ -1029,7 +1041,7 @@ class DatabaseManager:
         if not project_name:
             return None
 
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         project_id = self._get_or_create_project_by_name_with_cursor(c, project_name, event_id)
         conn.commit()
@@ -1037,7 +1049,7 @@ class DatabaseManager:
         return project_id
 
     def get_all_events(self):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """SELECT id, name, description, start_datetime, end_datetime, location,
@@ -1050,7 +1062,7 @@ class DatabaseManager:
         return events
 
     def get_event(self, event_id):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """SELECT id, name, description, start_datetime, end_datetime, location, status, event_type, duplicate_policy
@@ -1063,7 +1075,7 @@ class DatabaseManager:
 
     def update_event(self, event_id, name, description=None, start_datetime=None, end_datetime=None,
                      location=None, status='active', event_type='general', duplicate_policy='once_per_day'):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """UPDATE events
@@ -1088,7 +1100,7 @@ class DatabaseManager:
         return updated > 0
 
     def get_latest_event(self):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """SELECT id, name, description, start_datetime, end_datetime, location, status, event_type, duplicate_policy
@@ -1101,7 +1113,7 @@ class DatabaseManager:
         return event
 
     def get_active_events(self):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """SELECT id, name, event_type, location
@@ -1115,7 +1127,7 @@ class DatabaseManager:
 
     def add_event(self, name, description=None, start_datetime=None, end_datetime=None,
                   location=None, status='active', event_type='general', duplicate_policy='once_per_day'):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """INSERT INTO events
@@ -1139,7 +1151,7 @@ class DatabaseManager:
         return event_id
 
     def get_project_fields(self, project_id):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         type_column = 'field_type'
         if not self._column_exists(c, 'project_fields', 'field_type') and self._column_exists(c, 'project_fields', 'type'):
@@ -1169,7 +1181,7 @@ class DatabaseManager:
         ]
 
     def get_event_fields(self, event_id):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """SELECT id, event_id, name, field_type, is_required, display_order
@@ -1196,7 +1208,7 @@ class DatabaseManager:
         ]
 
     def add_event_field(self, event_id, name, field_type='text', is_required=False, display_order=0):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute("SELECT id FROM events WHERE id = %s", (event_id,))
         if not c.fetchone():
@@ -1214,7 +1226,7 @@ class DatabaseManager:
         return field_id
 
     def delete_event_field(self, field_id):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute("DELETE FROM participant_event_field_values WHERE field_id = %s", (field_id,))
         c.execute("DELETE FROM event_fields WHERE id = %s", (field_id,))
@@ -1224,7 +1236,7 @@ class DatabaseManager:
         return deleted > 0
 
     def update_event_rules(self, event_id, duplicate_policy, status=None):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """UPDATE events
@@ -1241,7 +1253,7 @@ class DatabaseManager:
         if not participant_id or not field_values:
             return
 
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         now = datetime.now()
         for field_id, value in field_values.items():
@@ -1269,7 +1281,7 @@ class DatabaseManager:
         conn.close()
 
     def add_project_field(self, project_id, name, field_type='text', is_required=False, display_order=0):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
         if not c.fetchone():
@@ -1291,7 +1303,7 @@ class DatabaseManager:
         return field_id
 
     def delete_project_field(self, field_id):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute("DELETE FROM project_fields WHERE id = %s", (field_id,))
         conn.commit()
@@ -1300,7 +1312,7 @@ class DatabaseManager:
         return deleted > 0
 
     def get_total_students(self, event_id=None):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         if event_id:
             c.execute("SELECT COUNT(*) FROM students WHERE event_id = %s", (event_id,))
@@ -1311,7 +1323,7 @@ class DatabaseManager:
         return total
 
     def get_total_attendance(self, event_id=None):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         if event_id:
             c.execute("SELECT COUNT(*) FROM attendance_events WHERE event_id = %s", (event_id,))
@@ -1322,7 +1334,7 @@ class DatabaseManager:
         return total
 
     def get_all_students(self):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
@@ -1335,7 +1347,7 @@ class DatabaseManager:
         return students
 
     def get_student_by_matricula(self, matricula):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute("SELECT id, first_name, last_name_p, last_name_m, matricula, carrera, project_id, event_id FROM students WHERE matricula = %s", (matricula,))
         student = c.fetchone()
@@ -1343,7 +1355,7 @@ class DatabaseManager:
         return student
 
     def get_student_by_id(self, student_id):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor(dictionary=True)
         c.execute(
             """SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
@@ -1361,7 +1373,7 @@ class DatabaseManager:
 
     def update_student_participant(self, student_id, first_name, last_name_p, last_name_m, matricula,
                                    carrera, project_id=None, email=None, participant_type='alumno'):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         c.execute(
             """UPDATE students
@@ -1392,7 +1404,7 @@ class DatabaseManager:
                 "o el formato con Proyecto, Folio, Evento, Nombre Autores/Asesores y Num. Control/Departamento"
             )
 
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         errors = []
         success_count = 0
@@ -1547,7 +1559,7 @@ class DatabaseManager:
         return f"Se procesaron {success_count} estudiantes correctamente.{project_summary}"
 
     def export_attendance_to_excel(self, project_id, start_date, end_date):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         query = """
             SELECT s.matricula, s.first_name, s.last_name_p, s.last_name_m, s.carrera, p.name, a.timestamp
@@ -1598,7 +1610,7 @@ class DatabaseManager:
         return report_path
 
     def get_event_attendance_report(self, event_id, start_date=None, end_date=None, project_id=None):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         query = """
             SELECT s.matricula, s.first_name, s.last_name_p, s.last_name_m, s.carrera,
@@ -1688,7 +1700,7 @@ class DatabaseManager:
         return report_path
 
     def export_attendance_to_pdf(self, project_id, start_date, end_date):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         query = """
             SELECT s.matricula, s.first_name, s.last_name_p, s.last_name_m, s.carrera, p.name, a.timestamp
@@ -1765,7 +1777,7 @@ class DatabaseManager:
         return " AND ".join(clauses), params
 
     def count_students_filtered(self, matricula_search='', apellido_p_search='', project_id_filter='', event_id_filter=''):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         c = conn.cursor()
         where_clause, params = self._student_filter_where(
             matricula_search,
@@ -1789,7 +1801,7 @@ class DatabaseManager:
         limit=None,
         offset=0,
     ):
-        conn = mysql.connector.connect(**self.db_config)
+        conn = self.connect()
         try:
             query, params = self._filtered_students_query(
                 matricula_search, apellido_p_search, project_id_filter, event_id_filter, sort_by, sort_dir, limit, offset

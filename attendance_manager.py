@@ -1,6 +1,5 @@
 from datetime import datetime
 
-import mysql.connector
 import pytz
 
 
@@ -14,7 +13,7 @@ class AttendanceManager:
         self.db_manager = db_manager
 
     def _connect(self):
-        return mysql.connector.connect(**self.db_manager.db_config)
+        return self.db_manager.connect()
 
     def _now(self):
         now_mx = datetime.now(mexico_tz)
