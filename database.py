@@ -133,6 +133,7 @@ class DatabaseManager:
             token VARCHAR(80) UNIQUE NOT NULL,
             status VARCHAR(30) NOT NULL DEFAULT 'active',
             qr_path VARCHAR(255),
+            digital_url VARCHAR(500),
             sent_status VARCHAR(30) NOT NULL DEFAULT 'pending',
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
@@ -207,6 +208,7 @@ class DatabaseManager:
         self._ensure_column(c, 'participants', 'created_at', 'DATETIME NULL')
         self._ensure_column(c, 'participants', 'updated_at', 'DATETIME NULL')
         self._ensure_column(c, 'credentials', 'qr_path', 'VARCHAR(255)')
+        self._ensure_column(c, 'credentials', 'digital_url', 'VARCHAR(500)')
         self._ensure_column(c, 'credentials', 'sent_status', "VARCHAR(30) NOT NULL DEFAULT 'pending'")
         self._ensure_column(c, 'credentials', 'created_at', 'DATETIME NULL')
         self._ensure_column(c, 'credentials', 'updated_at', 'DATETIME NULL')
@@ -633,12 +635,12 @@ class DatabaseManager:
 
     def _ensure_credential_for_participant(self, cursor, participant_id):
         cursor.execute(
-            "SELECT id, token, qr_path FROM credentials WHERE participant_id = %s ORDER BY created_at DESC LIMIT 1",
+            "SELECT id, token, qr_path, digital_url FROM credentials WHERE participant_id = %s ORDER BY created_at DESC LIMIT 1",
             (participant_id,)
         )
         existing = cursor.fetchone()
         if existing:
-            return {"id": existing[0], "token": existing[1], "qr_path": existing[2]}
+            return {"id": existing[0], "token": existing[1], "qr_path": existing[2], "digital_url": existing[3]}
 
         now = datetime.now()
         for _ in range(5):
@@ -661,7 +663,7 @@ class DatabaseManager:
                            VALUES (%s, %s, %s, 'active', 'pending', %s, %s)""",
                         (credential_id, participant_id, token, now, now)
                     )
-                return {"id": credential_id, "token": token, "qr_path": None}
+                return {"id": credential_id, "token": token, "qr_path": None, "digital_url": None}
             except mysql.connector.Error as e:
                 if e.errno != 1062:
                     raise
@@ -765,6 +767,16 @@ class DatabaseManager:
         conn.commit()
         conn.close()
 
+    def actualizar_url_digital_credencial(self, token, url_digital):
+        conn = self.connect()
+        c = conn.cursor()
+        c.execute(
+            "UPDATE credentials SET digital_url = %s, updated_at = %s WHERE token = %s",
+            (url_digital, datetime.now(), token)
+        )
+        conn.commit()
+        conn.close()
+
     def update_credentials_sent_status(self, credential_ids, status):
         if not credential_ids:
             return
@@ -795,7 +807,7 @@ class DatabaseManager:
         c.execute(
             """SELECT p.id AS participant_id, p.full_name, p.email, p.participant_type,
                       p.project_id, pr.name AS project_name, e.name AS event_name,
-                      s.matricula, c.id AS credential_id, c.token, c.qr_path
+                      s.matricula, c.id AS credential_id, c.token, c.qr_path, c.digital_url
                FROM participants p
                JOIN credentials c ON c.participant_id = p.id
                LEFT JOIN students s ON p.legacy_student_id = s.id
@@ -977,6 +989,29 @@ class DatabaseManager:
         credential = c.fetchone()
         conn.close()
         return credential
+
+    def obtener_credencial_digital_por_token(self, token):
+        conn = self.connect()
+        c = conn.cursor(dictionary=True)
+        c.execute(
+            """SELECT c.id AS credential_id, c.token, c.status AS credential_status,
+                      c.qr_path, c.digital_url, c.created_at, c.updated_at,
+                      p.id AS participant_id, p.full_name, p.participant_type,
+                      p.project_id, p.status AS participant_status, p.event_id,
+                      s.id AS student_id, s.first_name, s.last_name_p, s.last_name_m,
+                      s.matricula, s.carrera, pr.name AS project_name, e.name AS event_name,
+                      e.start_datetime, e.end_datetime, e.location
+               FROM credentials c
+               JOIN participants p ON c.participant_id = p.id
+               LEFT JOIN students s ON p.legacy_student_id = s.id
+               LEFT JOIN projects pr ON p.project_id = pr.id
+               LEFT JOIN events e ON p.event_id = e.id
+               WHERE c.token = %s""",
+            (token,)
+        )
+        credencial = c.fetchone()
+        conn.close()
+        return credencial
 
     def record_attendance_event(self, participant_id, credential_id, legacy_attendance_id, event_type, timestamp, event_id=None):
         conn = self.connect()

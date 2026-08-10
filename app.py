@@ -16,7 +16,7 @@ import mysql.connector
 import pandas as pd
 import xlsxwriter
 from dotenv import load_dotenv
-from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Flask, abort, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, landscape
@@ -150,10 +150,12 @@ def send_registered_credential_silently(event_id, project_id, participant_type, 
         if not recipient:
             return
 
+        url_digital = asegurar_url_digital_credencial(credential)
         subject = f"Credencial para {event[1]}"
         body = (
             f"Hola,\n\nSe registro la credencial de {full_name} para {event[1]}.\n\n"
-            f"Matricula: {matricula}\n\n"
+            f"Matricula: {matricula}\n"
+            f"Credencial digital: {url_digital}\n\n"
             "Adjuntamos el QR para presentarlo en el registro de asistencia.\n"
         )
         filename = f"{matricula or credential['token']}.png"
@@ -174,6 +176,27 @@ qr_background_executor = ThreadPoolExecutor(max_workers=int(os.getenv("QR_BACKGR
 qr_background_submitted = set()
 qr_background_lock = Lock()
 
+
+
+def url_credencial_digital(token_credencial):
+    return url_for("credencial_digital", token_credencial=token_credencial, _external=True)
+
+
+def asegurar_url_digital_credencial(credencial):
+    token_credencial = credencial["token"]
+    url_digital = url_credencial_digital(token_credencial)
+    if credencial.get("digital_url") != url_digital:
+        db_manager.actualizar_url_digital_credencial(token_credencial, url_digital)
+    return url_digital
+
+
+def ruta_publica_qr(ruta_qr):
+    if not ruta_qr:
+        return ""
+    ruta_limpia = ruta_qr.replace("\\", "/")
+    if ruta_limpia.startswith("static/"):
+        return url_for("static", filename=ruta_limpia[len("static/"):])
+    return f"/{ruta_limpia.lstrip('/')}"
 
 def ensure_credential_qr(credential):
     token = credential["token"]
@@ -1396,6 +1419,62 @@ def download_student_credential_rect_pdf(student_id):
     return download_student_credential(student_id, "horizontal")
 
 
+
+@app.route("/credencial/<token_credencial>")
+def credencial_digital(token_credencial):
+    credencial = db_manager.obtener_credencial_digital_por_token(token_credencial)
+    if not credencial:
+        abort(404)
+    ruta_qr = ensure_credential_qr(credencial)
+    url_digital = asegurar_url_digital_credencial(credencial)
+    return render_template(
+        "credencial_digital.html",
+        credencial=datos_credencial_digital(credencial),
+        url_digital=url_digital,
+        ruta_qr_publica=ruta_publica_qr(ruta_qr),
+        estado=estado_credencial_digital(credencial),
+    )
+
+
+@app.route("/participantes/<path:student_id>/credencial-digital")
+@login_required
+@role_required("admin", "staff")
+def abrir_credencial_digital_participante(student_id):
+    student = db_manager.get_student_by_id(student_id)
+    if not student:
+        flash("Participante no encontrado", "warning")
+        return redirect(url_for("data"))
+    credencial = db_manager.ensure_student_participant_credential(student_dict_to_tuple(student))
+    ensure_credential_qr(credencial)
+    return redirect(asegurar_url_digital_credencial(credencial))
+
+
+def datos_credencial_digital(credencial):
+    nombre = credencial.get("full_name") or nombre_completo_credencial(credencial)
+    return {
+        "nombre": nombre or "Participante",
+        "matricula": credencial.get("matricula") or "Sin matricula",
+        "carrera": credencial.get("carrera") or "Sin carrera",
+        "evento": credencial.get("event_name") or "Evento general",
+        "proyecto": credencial.get("project_name") or "Sin proyecto",
+        "tipo": credencial.get("participant_type") or "alumno",
+        "ubicacion": credencial.get("location") or "",
+        "token": credencial.get("token"),
+    }
+
+
+def nombre_completo_credencial(credencial):
+    partes = [credencial.get("first_name"), credencial.get("last_name_p"), credencial.get("last_name_m")]
+    return " ".join(parte for parte in partes if parte)
+
+
+def estado_credencial_digital(credencial):
+    if credencial.get("credential_status") != "active":
+        return {"texto": "Inactiva", "clase": "digital-status-danger"}
+    if credencial.get("participant_status") != "active":
+        return {"texto": "Participante inactivo", "clase": "digital-status-danger"}
+    return {"texto": "Activa", "clase": "digital-status-ok"}
+
 def download_student_credential(student_id, layout):
     student = db_manager.get_student_by_id(student_id)
     if not student:
@@ -1575,6 +1654,11 @@ def download_all_qrs():
     )
 
 
+
+def linea_credencial_digital_envio(fila):
+    url_digital = asegurar_url_digital_credencial(fila)
+    return f"- {fila['full_name']} | Credencial digital: {url_digital}"
+
 def build_credential_email_batches(event_id):
     rows = db_manager.get_event_credential_rows(event_id)
     projects_with_advisors = {}
@@ -1633,7 +1717,7 @@ def send_event_credentials():
                 attachments.append((qr_path, filename))
                 credential_ids.append(row["credential_id"])
 
-        names = "\n".join(f"- {row['full_name']}" for row in batch["rows"])
+        names = "\n".join(linea_credencial_digital_envio(row) for row in batch["rows"])
         body = render_text_template(
             template["email_body"],
             event_name=event[1],
