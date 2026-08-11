@@ -2,55 +2,73 @@
 {% from '_help.html' import tip %}
 {% block title %}Dashboard Admin{% endblock %}
 {% block content %}
-<section class="mb-6">
-    <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Panel de control</p>
-    <h1 class="tecn-blue-text !mb-1">Dashboard Admin {{ tip('El resumen usa el evento mas reciente como referencia principal.') }}</h1>
-    {% if latest_event %}
-    <p class="text-slate-500">Resumen del evento mas reciente: <strong class="text-slate-800">{{ latest_event[1] }}</strong></p>
-    {% else %}
-    <p class="text-slate-500">Aun no hay eventos registrados. Crea un evento para comenzar.</p>
-    {% endif %}
+<section class="page-hero">
+    <div>
+        <p class="page-eyebrow">Panel de evento</p>
+        <h1 class="page-title">Dashboard administrador {{ tip('El resumen usa el evento mas reciente como referencia principal.') }}</h1>
+        {% if latest_event %}
+        <p class="page-subtitle">Resumen operativo de <strong>{{ latest_event[1] }}</strong>.</p>
+        {% else %}
+        <p class="page-subtitle">Crea un evento para comenzar a registrar participantes, credenciales y asistencias.</p>
+        {% endif %}
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-outline-primary" href="{{ url_for('events') }}">Eventos</a>
+        <a class="btn tecn-blue text-white" href="{{ url_for('scan') }}">Escanear</a>
+    </div>
 </section>
 
+<div class="quick-actions">
+    <a class="quick-action quick-action-primary" href="{{ url_for('register') }}">
+        <strong>Registrar participantes</strong>
+        <span>Alta manual o carga por Excel para el evento.</span>
+    </a>
+    <a class="quick-action" href="{{ url_for('data', event_id=latest_event[0]) if latest_event else url_for('data') }}">
+        <strong>Credenciales</strong>
+        <span>Descarga PDF, horizontal, digital o ZIP por proyecto.</span>
+    </a>
+    <a class="quick-action" href="{{ url_for('reports') }}">
+        <strong>Reportes</strong>
+        <span>Genera lista de asistencia o reporte final oficial.</span>
+    </a>
+</div>
+
 {% if latest_event %}
-<div class="card mb-4">
-    <div class="card-body">
-        <div class="row g-3 align-items-center">
-            <div class="col-lg-7">
-                <p class="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Evento activo de referencia {{ tip('Desde aqui puedes abrir directamente los participantes del evento destacado.') }}</p>
-                <h2 class="h4 mb-1">{{ latest_event[1] }}</h2>
-                <p class="mb-0 text-slate-500">
-                    {{ latest_event[7] }}{% if latest_event[5] %} · {{ latest_event[5] }}{% endif %}
-                    {% if latest_event[3] %} · {{ latest_event[3] }}{% endif %}
-                </p>
-            </div>
-            <div class="col-lg-5 text-lg-end">
-                <a class="btn btn-outline-primary" href="{{ url_for('kiosco') }}">Modo kiosco</a>
-                <a class="btn tecn-blue text-white ms-lg-2" href="{{ url_for('data', event_id=latest_event[0]) }}">Abrir este evento</a>
-                <a class="btn btn-outline-primary ms-lg-2" href="{{ url_for('reports') }}">Reporte final</a>
-            </div>
+<section class="surface-panel mb-4">
+    <div class="table-toolbar">
+        <div>
+            <h2>{{ latest_event[1] }}</h2>
+            <p>{{ latest_event[7] }}{% if latest_event[5] %} / {{ latest_event[5] }}{% endif %}{% if latest_event[3] %} / {{ latest_event[3] }}{% endif %}</p>
+        </div>
+        <div class="action-row">
+            <a class="btn btn-outline-primary" href="{{ url_for('kiosco') }}">Modo kiosco</a>
+            <a class="btn tecn-blue text-white" href="{{ url_for('data', event_id=latest_event[0]) }}">Abrir evento</a>
         </div>
     </div>
+    <div class="executive-grid">
+        <div class="metric-card"><span>Participantes</span><strong>{{ resumen.participantes }}</strong></div>
+        <div class="metric-card"><span>Presentes</span><strong>{{ resumen.presentes }}</strong></div>
+        <div class="metric-card"><span>Pendientes</span><strong>{{ resumen.pendientes }}</strong></div>
+        <div class="metric-card"><span>Asistencia</span><strong>{{ resumen.porcentaje }}%</strong></div>
+        <div class="metric-card"><span>Alumnos</span><strong>{{ resumen.alumnos }}</strong></div>
+        <div class="metric-card"><span>Asesores</span><strong>{{ resumen.asesores }}</strong></div>
+        <div class="metric-card"><span>Registros</span><strong>{{ resumen.asistencias }}</strong></div>
+        <div class="metric-card"><span>Hora pico</span><strong>{{ resumen.hora_pico }}</strong></div>
+    </div>
+</section>
+{% else %}
+<div class="empty-state mb-4">
+    <h2>No hay evento activo</h2>
+    <p>Crea el primer evento y despues importa participantes desde Excel.</p>
 </div>
 {% endif %}
 
-<div class="executive-grid mb-4">
-    <div class="metric-card"><span>Participantes</span><strong>{{ resumen.participantes }}</strong></div>
-    <div class="metric-card"><span>Presentes</span><strong>{{ resumen.presentes }}</strong></div>
-    <div class="metric-card"><span>Pendientes</span><strong>{{ resumen.pendientes }}</strong></div>
-    <div class="metric-card"><span>Asistencia</span><strong>{{ resumen.porcentaje }}%</strong></div>
-    <div class="metric-card"><span>Alumnos</span><strong>{{ resumen.alumnos }}</strong></div>
-    <div class="metric-card"><span>Asesores</span><strong>{{ resumen.asesores }}</strong></div>
-    <div class="metric-card"><span>Registros</span><strong>{{ resumen.asistencias }}</strong></div>
-    <div class="metric-card"><span>Hora pico</span><strong>{{ resumen.hora_pico }}</strong></div>
-</div>
-
 {% if proyectos_asistencia %}
-<div class="card mb-4">
+<section class="card mb-4">
     <div class="card-header"><h2 class="h5 mb-0">Check-in por proyecto</h2></div>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
-            <thead><tr><th>Proyecto</th><th>Participantes</th><th>Presentes</th><th>Registros</th><th></th></tr></thead>
+            <thead><tr><th>Proyecto</th><th>Participantes</th><th>Presentes</th><th>Registros</th><th class="text-end">Accion</th></tr></thead>
             <tbody>
                 {% for proyecto in proyectos_asistencia[:8] %}
                 <tr>
@@ -58,60 +76,30 @@
                     <td>{{ proyecto.participantes }}</td>
                     <td>{{ proyecto.presentes }}</td>
                     <td>{{ proyecto.registros }}</td>
-                    <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('asistencia_proyecto', project_id=proyecto.id, event_id=latest_event[0]) }}">Ver</a></td>
+                    <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('asistencia_proyecto', project_id=proyecto.id, event_id=latest_event[0]) }}">Ver</a></td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-</div>
+</section>
 {% endif %}
 
-<div class="card">
-    <div class="card-header">
-        <h2 class="h5 mb-0">Generar reporte del evento {{ tip('Genera un PDF o Excel del evento mas reciente, con filtros opcionales.') }}</h2>
-    </div>
+<section class="card">
+    <div class="card-header"><h2 class="h5 mb-0">Reporte rapido {{ tip('Genera un PDF o Excel del evento mas reciente, con filtros opcionales.') }}</h2></div>
     <div class="card-body">
         <form id="report-form" method="POST">
-            {% if latest_event %}
-            <input type="hidden" name="event_id" value="{{ latest_event[0] }}">
-            {% endif %}
+            {% if latest_event %}<input type="hidden" name="event_id" value="{{ latest_event[0] }}">{% endif %}
             <div class="row g-3">
-                <div class="col-md-3">
-                    <label for="start_date" class="form-label">Fecha de inicio</label>
-                    <input type="date" class="form-control" id="start_date" name="start_date">
-                </div>
-                <div class="col-md-3">
-                    <label for="end_date" class="form-label">Fecha de fin</label>
-                    <input type="date" class="form-control" id="end_date" name="end_date">
-                </div>
-                <div class="col-md-4">
-                    <label for="project_id" class="form-label">Proyecto del evento</label>
-                    <select class="form-select" id="project_id" name="project_id">
-                        <option value="">Todos los proyectos</option>
-                        {% for project in projects %}
-                            <option value="{{ project[0] }}">{{ project[1] }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <label for="report_type" class="form-label">Tipo</label>
-                    <select class="form-select" id="report_type" name="report_type">
-                        <option value="asistencia">Asistencia</option>
-                        <option value="final">Final oficial</option>
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <label for="format" class="form-label">Formato</label>
-                    <select class="form-select" id="format" name="format" required>
-                        <option value="pdf">PDF</option>
-                        <option value="excel">Excel</option>
-                    </select>
-                </div>
+                <div class="col-md-3"><label for="start_date" class="form-label">Fecha de inicio</label><input type="date" class="form-control" id="start_date" name="start_date"></div>
+                <div class="col-md-3"><label for="end_date" class="form-label">Fecha de fin</label><input type="date" class="form-control" id="end_date" name="end_date"></div>
+                <div class="col-md-3"><label for="project_id" class="form-label">Proyecto</label><select class="form-select" id="project_id" name="project_id"><option value="">Todos los proyectos</option>{% for project in projects %}<option value="{{ project[0] }}">{{ project[1] }}</option>{% endfor %}</select></div>
+                <div class="col-md-2"><label for="report_type" class="form-label">Tipo</label><select class="form-select" id="report_type" name="report_type"><option value="asistencia">Asistencia</option><option value="final">Final oficial</option></select></div>
+                <div class="col-md-1"><label for="format" class="form-label">Formato</label><select class="form-select" id="format" name="format" required><option value="pdf">PDF</option><option value="excel">Excel</option></select></div>
             </div>
-            <button type="submit" class="btn tecn-blue text-white mt-3" {% if not latest_event %}disabled{% endif %}>Generar reporte</button>
+            <button type="submit" class="btn tecn-blue text-white mt-3" {% if not latest_event %}disabled{% endif %}>Generar</button>
         </form>
         <div id="report-result" class="mt-3"></div>
     </div>
-</div>
+</section>
 {% endblock %}

@@ -2,62 +2,44 @@
 {% from '_help.html' import tip %}
 {% block title %}Reportes{% endblock %}
 {% block content %}
-<section class="mb-6">
-    <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Asistencia</p>
-    <h1 class="tecn-blue-text !mb-1">Reportes {{ tip('Genera reportes filtrando por evento, proyecto y rango de fechas.') }}</h1>
-    <p class="text-slate-500">Selecciona filtros, genera el archivo y descargalo sin salir de esta pantalla.</p>
+<section class="page-hero">
+    <div>
+        <p class="page-eyebrow">Resultados</p>
+        <h1 class="page-title">Reportes {{ tip('Genera reportes filtrando por evento, proyecto y rango de fechas.') }}</h1>
+        <p class="page-subtitle">Prepara archivos para coordinacion, entrega oficial o seguimiento interno.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-outline-primary" href="{{ url_for('data') }}">Participantes</a>
+    </div>
 </section>
 
+{% if not events %}
+<div class="empty-state">
+    <h2>No hay eventos disponibles para reportar</h2>
+    <p>Si eres staff, solicita que te asignen un evento. Si eres admin, crea o activa un evento.</p>
+</div>
+{% else %}
 <div class="report-layout">
     <section class="card report-form-card">
-        <div class="card-header">
-            <h2 class="h5 mb-0">Generar reporte {{ tip('Para reportes nuevos, lo ideal es seleccionar evento. El reporte general se mantiene para datos anteriores.') }}</h2>
-        </div>
+        <div class="card-header"><h2 class="h5 mb-0">Generar archivo {{ tip('Selecciona evento para evitar mezclar asistencias de actividades distintas.') }}</h2></div>
         <div class="card-body">
             <form id="report-form" method="POST" class="report-form">
                 <div>
-                    <label for="event_id" class="form-label">Evento {{ tip('Selecciona el evento para evitar mezclar asistencias de actividades distintas.') }}</label>
-                    <select class="form-select" id="event_id" name="event_id">
-                        <option value="">Todos / reporte general</option>
-                        {% for event in events %}
-                            <option value="{{ event[0] }}">{{ event[1] }}</option>
-                        {% endfor %}
+                    <label for="event_id" class="form-label">Evento</label>
+                    <select class="form-select" id="event_id" name="event_id" required>
+                        <option value="">Selecciona un evento</option>
+                        {% for event in events %}<option value="{{ event[0] }}">{{ event[1] }}</option>{% endfor %}
                     </select>
                 </div>
                 <div>
-                    <label for="project_id" class="form-label">Proyecto {{ tip('Filtra asistencias de un proyecto dentro del evento seleccionado.') }}</label>
-                    <select class="form-select" id="project_id" name="project_id">
-                        <option value="">Todos los proyectos</option>
-                        {% for project in projects %}
-                            <option value="{{ project[0] }}">{{ project[1] }}</option>
-                        {% endfor %}
-                    </select>
+                    <label for="project_id" class="form-label">Proyecto</label>
+                    <select class="form-select" id="project_id" name="project_id"><option value="">Todos los proyectos</option>{% for project in projects %}<option value="{{ project[0] }}">{{ project[1] }}</option>{% endfor %}</select>
                 </div>
-                <div>
-                    <label for="start_date" class="form-label">Fecha de inicio</label>
-                    <input type="date" class="form-control" id="start_date" name="start_date">
-                </div>
-                <div>
-                    <label for="end_date" class="form-label">Fecha de fin</label>
-                    <input type="date" class="form-control" id="end_date" name="end_date">
-                </div>
-                <div>
-                    <label for="report_type" class="form-label">Tipo</label>
-                    <select class="form-select" id="report_type" name="report_type">
-                        <option value="asistencia">Lista de asistencia</option>
-                        <option value="final">Reporte final oficial</option>
-                    </select>
-                </div>
-                <div>
-                    <label for="format" class="form-label">Formato</label>
-                    <select class="form-select" id="format" name="format" required>
-                        <option value="pdf">PDF</option>
-                        <option value="excel">Excel</option>
-                    </select>
-                </div>
-                <div class="report-submit">
-                    <button type="submit" class="btn tecn-blue text-white" data-loading-text="Generando...">Generar reporte</button>
-                </div>
+                <div><label for="start_date" class="form-label">Fecha de inicio</label><input type="date" class="form-control" id="start_date" name="start_date"></div>
+                <div><label for="end_date" class="form-label">Fecha de fin</label><input type="date" class="form-control" id="end_date" name="end_date"></div>
+                <div><label for="report_type" class="form-label">Tipo</label><select class="form-select" id="report_type" name="report_type"><option value="asistencia">Lista de asistencia</option><option value="final">Reporte final oficial</option></select></div>
+                <div><label for="format" class="form-label">Formato</label><select class="form-select" id="format" name="format" required><option value="pdf">PDF</option><option value="excel">Excel</option></select></div>
+                <div class="report-submit"><button type="submit" class="btn tecn-blue text-white" data-loading-text="Generando...">Generar reporte</button></div>
             </form>
         </div>
     </section>
@@ -65,9 +47,10 @@
     <aside class="report-result-card" id="report-result">
         <div class="report-empty">
             <span class="report-icon">PDF</span>
-            <h2 class="h5 mb-1">Reporte listo para descargar</h2>
-            <p class="text-muted mb-0">Cuando generes un archivo, el enlace aparecera aqui.</p>
+            <h2 class="h5 mb-1">Archivo pendiente</h2>
+            <p class="text-muted mb-0">Cuando generes el reporte, el enlace de descarga aparecera aqui.</p>
         </div>
     </aside>
 </div>
+{% endif %}
 {% endblock %}

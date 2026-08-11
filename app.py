@@ -29,9 +29,12 @@ from attendance_manager import AttendanceManager
 from database import DatabaseManager
 from qr_manager import QRManager
 
-VALID_ROLES = ("admin", "staff", "guest")
+VALID_ROLES = ("adminsuperior", "admin", "staff", "guest")
+ROLES_EVENTOS_GLOBALES = {"adminsuperior", "admin"}
+ROLES_OPERATIVOS_POR_EVENTO = {"staff", "guest"}
 ROLE_LABELS = {
-    "admin": "Administrador",
+    "adminsuperior": "Administrador superior",
+    "admin": "Administrador de evento",
     "staff": "Staff",
     "guest": "Consulta",
 }
@@ -65,6 +68,7 @@ def get_db_config():
 
 def get_role_home_endpoint(role):
     role_map = {
+        "adminsuperior": "dashboard_sistema",
         "admin": "admin_dashboard",
         "staff": "staff_dashboard",
         "guest": "guest_dashboard",
@@ -579,7 +583,7 @@ default_admin_username = os.getenv("ADMIN_USERNAME")
 default_admin_password = os.getenv("ADMIN_PASSWORD")
 if default_admin_username and default_admin_password:
     default_hash = generate_password_hash(default_admin_password, method="pbkdf2:sha256")
-    db_manager.ensure_user(default_admin_username, default_hash, role="admin")
+    db_manager.ensure_user(default_admin_username, default_hash, role=os.getenv("ADMIN_ROLE", "adminsuperior"))
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -593,7 +597,11 @@ class User(UserMixin):
 
     @property
     def is_admin(self):
-        return self.role == "admin"
+        return self.role in ROLES_EVENTOS_GLOBALES
+
+    @property
+    def is_adminsuperior(self):
+        return self.role == "adminsuperior"
 
     @property
     def is_staff(self):
@@ -649,12 +657,11 @@ def datetime_local_value(value):
 
 def evento_permitido_para_usuario(event_id):
     event_id_normalizado = normalizar_evento_permiso(event_id)
-    if not event_id_normalizado:
-        return not event_id
-    if current_user.role == "admin":
+    if current_user.role in ROLES_EVENTOS_GLOBALES:
         return True
-    allowed = db_manager.get_user_event_permissions(current_user.id)
-    return not allowed or event_id_normalizado in set(allowed)
+    if not event_id_normalizado:
+        return False
+    return event_id_normalizado in eventos_permitidos_usuario_actual()
 
 
 def normalizar_evento_permiso(event_id):
@@ -676,13 +683,22 @@ def evento_no_autorizado(event_id):
     return event_id and not evento_permitido_para_usuario(event_id)
 
 def filter_events_for_current_user(events):
-    if not current_user.is_authenticated or current_user.role == "admin":
+    if not current_user.is_authenticated:
+        return []
+    if current_user.role in ROLES_EVENTOS_GLOBALES:
         return events
-    allowed = db_manager.get_user_event_permissions(current_user.id)
-    if not allowed:
-        return events
-    allowed_set = set(allowed)
+    allowed_set = eventos_permitidos_usuario_actual()
     return [event for event in events if event[0] in allowed_set]
+
+
+def eventos_permitidos_usuario_actual():
+    if not current_user.is_authenticated:
+        return set()
+    return set(db_manager.get_user_event_permissions(current_user.id))
+
+
+def usuario_operativo_sin_eventos():
+    return current_user.role in ROLES_OPERATIVOS_POR_EVENTO and not eventos_permitidos_usuario_actual()
 
 
 @login_manager.user_loader
@@ -734,6 +750,19 @@ def dashboard():
     return redirect(url_for("role_home"))
 
 
+@app.route("/sistema/dashboard")
+@login_required
+@role_required("adminsuperior")
+def dashboard_sistema():
+    return render_template(
+        "dashboard_sistema.html",
+        users=db_manager.get_all_users(),
+        events=db_manager.get_all_events(),
+        total_students=db_manager.get_total_students(),
+        total_attendance=db_manager.get_total_attendance(),
+    )
+
+
 @app.route("/admin/dashboard")
 @login_required
 @role_required("admin")
@@ -756,9 +785,10 @@ def admin_dashboard():
 
 @app.route("/staff/dashboard")
 @login_required
-@role_required("admin", "staff")
+@role_required("staff")
 def staff_dashboard():
-    latest_event = db_manager.get_latest_event()
+    eventos = filter_events_for_current_user(db_manager.get_active_events())
+    latest_event = eventos[0] if eventos else None
     latest_event_id = latest_event[0] if latest_event else None
     projects = db_manager.get_projects_by_event(latest_event_id) if latest_event_id else []
     return render_template(
@@ -771,14 +801,14 @@ def staff_dashboard():
 
 @app.route("/guest/dashboard")
 @login_required
-@role_required("admin", "staff", "guest")
+@role_required("guest")
 def guest_dashboard():
     return render_template("guest_dashboard.html")
 
 
 @app.route("/create_user", methods=["GET", "POST"])
 @login_required
-@role_required("admin")
+@role_required("adminsuperior", "admin")
 def create_user():
     if request.method == "POST":
         try:
@@ -811,7 +841,7 @@ def create_user():
 
 @app.route("/users/<path:username>/role", methods=["POST"])
 @login_required
-@role_required("admin", api=True)
+@role_required("adminsuperior", "admin", api=True)
 def update_user_role(username):
     try:
         if username == current_user.id:
@@ -839,7 +869,7 @@ def update_user_role(username):
 
 @app.route("/users/<path:username>/events", methods=["POST"])
 @login_required
-@role_required("admin")
+@role_required("adminsuperior", "admin")
 def update_user_events(username):
     if not db_manager.get_user(username):
         flash("Usuario no encontrado", "warning")
@@ -863,10 +893,12 @@ def normalize_datetime_input(value):
 @login_required
 @role_required("admin")
 def events():
+    eventos = db_manager.get_all_events()
     return render_template(
         "events.html",
-        events=db_manager.get_all_events(),
+        events=eventos,
         projects=db_manager.get_all_projects(),
+        active_event_count=sum(1 for event in eventos if event[6] == "active"),
     )
 
 
@@ -1268,14 +1300,16 @@ def event_projects_api(event_id):
 @login_required
 @role_required("admin", "staff")
 def scan():
-    return render_template("scan.html", events=filter_events_for_current_user(db_manager.get_active_events()))
+    events = filter_events_for_current_user(db_manager.get_active_events())
+    return render_template("scan.html", events=events, scanner_locked=usuario_operativo_sin_eventos())
 
 
 @app.route("/kiosco")
 @login_required
 @role_required("admin", "staff")
 def kiosco():
-    return render_template("kiosco.html", events=filter_events_for_current_user(db_manager.get_active_events()))
+    events = filter_events_for_current_user(db_manager.get_active_events())
+    return render_template("kiosco.html", events=events, scanner_locked=usuario_operativo_sin_eventos())
 
 
 @app.route("/proyectos/<int:project_id>/asistencia")
@@ -1363,7 +1397,7 @@ def get_participant_page(filters):
         page = max(1, min(page, max((total + filters["per_page"] - 1) // filters["per_page"], 1)))
         rows, total = fetch_filtered_students_page(filters, page)
     total_pages = max((total + filters["per_page"] - 1) // filters["per_page"], 1)
-    return {"rows": rows, "page": page, "total_pages": total_pages}
+    return {"rows": rows, "page": page, "total_pages": total_pages, "total": total}
 
 
 def count_filtered_students(filters):
@@ -1417,6 +1451,7 @@ def build_data_context(filters, page_data):
         "events": filter_events_for_current_user(cached_all_events()),
         "page": page_data["page"],
         "total_pages": page_data["total_pages"],
+        "total_students": page_data["total"],
         "selected_event": cached_event(filters["event_id_filter"]) if filters["event_id_filter"] else None,
         **filters,
     }
@@ -1981,6 +2016,8 @@ def register_attendance():
 def validar_peticion_asistencia(data):
     if not data or "qr_data" not in data:
         return "Datos de QR no proporcionados"
+    if usuario_operativo_sin_eventos():
+        return "No tienes eventos asignados para registrar asistencia"
     event_id = normalizar_evento_asistencia(data.get("event_id"))
     if evento_no_autorizado(event_id):
         return "No tienes permiso para registrar asistencia en este evento"

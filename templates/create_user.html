@@ -2,10 +2,18 @@
 {% from '_help.html' import tip %}
 {% block title %}Crear Usuario{% endblock %}
 {% block content %}
-<div class="container mt-4">
-    <h1 class="text-center tecn-blue-text mb-4">Usuarios y roles {{ tip('Administra permisos para separar administradores, staff y consulta.') }}</h1>
+<section class="page-hero">
+    <div>
+        <p class="page-eyebrow">Seguridad</p>
+        <h1 class="page-title">Usuarios y roles {{ tip('Administra duenos del sistema, administradores de evento, staff y consulta.') }}</h1>
+        <p class="page-subtitle">Crea cuentas y asigna eventos para que cada persona vea solo lo que necesita.</p>
+    </div>
+</section>
+
+<div class="row g-4">
+    <div class="col-xl-4">
     <div class="card shadow mb-4">
-        <div class="card-header tecn-blue text-white">
+        <div class="card-header">
             <h2 class="h5 mb-0">Alta de usuario {{ tip('Crea accesos para personas que administraran, escanearan o consultaran reportes.') }}</h2>
         </div>
         <div class="card-body">
@@ -19,7 +27,7 @@
                     <input type="password" class="form-control" id="password" name="password" required>
                 </div>
                 <div class="mb-3">
-                    <label for="role" class="form-label">Rol {{ tip('Admin gestiona todo. Staff escanea y consulta. Guest solo consulta lo permitido.') }}</label>
+                    <label for="role" class="form-label">Rol {{ tip('Administrador superior gestiona usuarios. Admin opera eventos. Staff escanea solo eventos asignados. Consulta ve solo lo permitido.') }}</label>
                     <select class="form-select" id="role" name="role" required>
                         {% for role in roles %}
                         <option value="{{ role }}">{{ ROLE_LABELS.get(role, role) }}</option>
@@ -31,9 +39,11 @@
             <div id="create-user-result" class="mt-3"></div>
         </div>
     </div>
+    </div>
 
+    <div class="col-xl-8">
     <div class="card shadow">
-        <div class="card-header tecn-blue text-white">
+        <div class="card-header">
             <h2 class="h5 mb-0">Usuarios existentes {{ tip('Puedes cambiar roles, excepto el tuyo propio para evitar quedarte sin acceso.') }}</h2>
         </div>
         <div class="card-body">
@@ -63,15 +73,15 @@
                             </td>
                             <td>
                                 <form method="POST" action="{{ url_for('update_user_events', username=user[0]) }}" class="d-flex flex-column gap-2">
-                                    <select class="form-select form-select-sm" name="event_ids" multiple size="3" {% if user[1] == 'admin' %}disabled{% endif %}>
+                                    <select class="form-select form-select-sm" name="event_ids" multiple size="3" {% if user[1] in ['adminsuperior', 'admin'] %}disabled{% endif %}>
                                         {% for event in events %}
                                         <option value="{{ event[0] }}" {% if event[0] in event_permissions.get(user[0], []) %}selected{% endif %}>{{ event[1] }}</option>
                                         {% endfor %}
                                     </select>
-                                    <button type="submit" class="btn btn-sm btn-outline-primary" {% if user[1] == 'admin' %}disabled{% endif %}>
+                                    <button type="submit" class="btn btn-sm btn-outline-primary" {% if user[1] in ['adminsuperior', 'admin'] %}disabled{% endif %}>
                                         Guardar eventos
                                     </button>
-                                    <span class="form-text">Sin seleccion significa acceso general para ese rol.</span>
+                                    <span class="form-text">Sin eventos asignados, staff y consulta no pueden operar eventos.</span>
                                 </form>
                             </td>
                             <td class="text-end">
@@ -90,6 +100,7 @@
             </div>
             <div id="users-result" class="mt-3"></div>
         </div>
+    </div>
     </div>
 </div>
 <script>

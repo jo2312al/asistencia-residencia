@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block title %}Sistema{% endblock %}
+{% block content %}
+<section class="page-hero">
+    <div>
+        <p class="page-eyebrow">Administracion superior</p>
+        <h1 class="page-title">Panel del sistema</h1>
+        <p class="page-subtitle">Controla usuarios, roles y permisos por evento sin entrar a la operacion diaria.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn tecn-blue text-white" href="{{ url_for('create_user') }}">Gestionar usuarios</a>
+    </div>
+</section>
+
+<div class="status-strip">
+    <div class="status-chip"><span>Usuarios</span><strong>{{ users|length }}</strong></div>
+    <div class="status-chip"><span>Eventos</span><strong>{{ events|length }}</strong></div>
+    <div class="status-chip"><span>Participantes</span><strong>{{ total_students }}</strong></div>
+    <div class="status-chip"><span>Asistencias</span><strong>{{ total_attendance }}</strong></div>
+</div>
+
+<div class="quick-actions">
+    <a class="quick-action quick-action-primary" href="{{ url_for('create_user') }}"><strong>Usuarios y permisos</strong><span>Crea cuentas y asigna eventos a staff o consulta.</span></a>
+    <div class="quick-action"><strong>Roles separados</strong><span>Admin superior gobierna accesos; admin opera eventos.</span></div>
+    <div class="quick-action"><strong>Acceso por evento</strong><span>Staff sin evento asignado no puede escanear ni consultar.</span></div>
+</div>
+
+<section class="card">
+    <div class="card-header"><h2 class="h5 mb-0">Usuarios recientes</h2></div>
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead><tr><th>Usuario</th><th>Rol</th></tr></thead>
+            <tbody>
+            {% for user in users[:8] %}
+                <tr><td>{{ user[0] }}</td><td><span class="badge-soft">{{ ROLE_LABELS.get(user[1], user[1]) }}</span></td></tr>
+            {% else %}
+                <tr><td colspan="2" class="text-center text-muted">No hay usuarios registrados.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

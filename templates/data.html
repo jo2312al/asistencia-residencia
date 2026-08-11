@@ -7,22 +7,23 @@
     <a class="text-slate-900 text-decoration-none" href="{{ url_for('data', page=1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=key, dir=next_dir, details='1' if show_details else None) }}">
         {{ label }}
         {% if sort_by == key %}
-            <span aria-hidden="true">{{ '▲' if sort_dir == 'asc' else '▼' }}</span>
+            <span aria-hidden="true">{{ 'ASC' if sort_dir == 'asc' else 'DESC' }}</span>
         {% endif %}
     </a>
 {%- endmacro %}
-<section class="mb-6">
-    <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Credenciales</p>
-    <h1 class="tecn-blue-text !mb-1">Participantes {{ tip('La lista siempre se consulta por evento para no mezclar credenciales ni envios.') }}</h1>
-    <p class="text-slate-500">Primero selecciona un evento; despues consulta participantes, credenciales y envios.</p>
+<section class="page-hero">
+    <div>
+        <p class="page-eyebrow">Credenciales</p>
+        <h1 class="page-title">Participantes {{ tip('La lista siempre se consulta por evento para no mezclar credenciales ni envios.') }}</h1>
+        <p class="page-subtitle">Consulta, ordena y descarga credenciales sin cargar QR pesados en la tabla.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-outline-primary" href="{{ url_for('register') }}">Agregar participante</a>
+    </div>
 </section>
 
-<div class="card shadow">
-    <div class="card-header tecn-blue text-white">
-        <h2 class="h5 mb-0">Seleccionar evento {{ tip('Elige un evento para cargar sus participantes, proyectos y acciones de credencial.') }}</h2>
-    </div>
-    <div class="card-body">
-        <form method="GET" action="{{ url_for('data') }}" class="mb-4">
+<div class="filter-bar">
+        <form method="GET" action="{{ url_for('data') }}">
             <div class="row g-3">
                 <div class="col-md-3">
                     <label for="event_filter" class="form-label">Evento {{ tip('Obligatorio para consultar o enviar credenciales.') }}</label>
@@ -60,11 +61,16 @@
                 </div>
             </div>
         </form>
+</div>
 
-        {% if selected_event %}
-        <div class="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-            <p class="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Evento seleccionado</p>
-            <p class="mb-0 text-lg font-semibold text-slate-900">{{ selected_event[1] }}</p>
+{% if selected_event %}
+<section class="surface-panel mb-3">
+        <div class="table-toolbar">
+            <div>
+                <h2>{{ selected_event[1] }}</h2>
+                <p>{{ total_students }} participantes encontrados.</p>
+            </div>
+            <span class="badge-soft">Pagina {{ page }} de {{ total_pages }}</span>
         </div>
 
         <div class="mb-3 d-flex flex-wrap gap-2">
@@ -186,12 +192,11 @@
             </ul>
         </nav>
         {% endif %}
-        {% else %}
-        <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
-            <h2 class="h5 mb-2">Selecciona un evento para ver participantes</h2>
-            <p class="mb-0 text-slate-500">La lista, descargas y envios se muestran por evento para evitar mezclar credenciales.</p>
-        </div>
-        {% endif %}
-    </div>
+</section>
+{% else %}
+<div class="empty-state">
+    <h2>Selecciona un evento para ver participantes</h2>
+    <p>La lista, descargas y envios se muestran por evento para evitar mezclar credenciales.</p>
 </div>
+{% endif %}
 {% endblock %}

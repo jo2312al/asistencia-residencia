@@ -18,7 +18,7 @@ import xlsxwriter
 from werkzeug.security import generate_password_hash
 
 class DatabaseManager:
-    VALID_ROLES = {'admin', 'staff', 'guest'}
+    VALID_ROLES = {'adminsuperior', 'admin', 'staff', 'guest'}
     BASE_REGISTRATION_FIELD_NAMES = {'nombre', 'apellido paterno', 'apellido materno', 'matricula', 'carrera'}
 
     def __init__(self, db_config):
@@ -308,7 +308,7 @@ class DatabaseManager:
     def normalize_role(self, role):
         role_value = (role or 'guest').strip().lower()
         if role_value not in self.VALID_ROLES:
-            raise ValueError("Rol invalido. Roles permitidos: admin, staff, guest")
+            raise ValueError("Rol invalido. Roles permitidos: adminsuperior, admin, staff, guest")
         return role_value
 
     def get_user(self, username):

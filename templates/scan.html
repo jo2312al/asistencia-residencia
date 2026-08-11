@@ -8,6 +8,9 @@
     <p class="text-slate-500">Selecciona el evento activo y escanea la credencial del participante.</p>
 </section>
 
+{% if scanner_locked %}
+<div class="empty-state"><h2>Scanner bloqueado</h2><p>No tienes eventos asignados. Pide a un administrador superior que te asigne el evento antes de escanear.</p></div>
+{% else %}
 <div class="scanner-layout">
     <section class="card scanner-main">
         <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
@@ -19,7 +22,7 @@
                 <div class="col-lg-7">
                     <label for="event_id" class="form-label">Evento {{ tip('Si lo dejas en registro general, la asistencia no quedara amarrada a un evento especifico.') }}</label>
                     <select class="form-select" id="event_id" name="event_id">
-                        <option value="">Registro general</option>
+                        {% if current_user.role == 'admin' %}<option value="">Registro general</option>{% endif %}
                         {% for event in events %}
                         <option value="{{ event[0] }}">{{ event[1] }}{% if event[2] %} - {{ event[2] }}{% endif %}{% if event[3] %} ({{ event[3] }}){% endif %}</option>
                         {% endfor %}
@@ -71,6 +74,7 @@
         </div>
     </aside>
 </div>
+{% endif %}
 
 <div class="modal fade" id="qrModal" tabindex="-1" aria-labelledby="qrModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">

@@ -10,11 +10,14 @@
         <span id="scanner-pill" class="scanner-pill scanner-pill-idle">Preparando</span>
     </div>
 
+    {% if scanner_locked %}
+    <div class="empty-state"><h2>Kiosco bloqueado</h2><p>No tienes eventos asignados. Pide a un administrador superior que te asigne el evento antes de usar kiosco.</p></div>
+    {% else %}
     <div class="kiosk-grid">
         <section class="kiosk-camera">
             <div class="kiosk-selectors">
                 <select class="form-select" id="event_id" name="event_id" aria-label="Evento">
-                    <option value="">Registro general</option>
+                    {% if current_user.role == 'admin' %}<option value="">Registro general</option>{% endif %}
                     {% for event in events %}
                     <option value="{{ event[0] }}">{{ event[1] }}{% if event[2] %} - {{ event[2] }}{% endif %}</option>
                     {% endfor %}
@@ -59,5 +62,6 @@
             </div>
         </aside>
     </div>
+    {% endif %}
 </section>
 {% endblock %}

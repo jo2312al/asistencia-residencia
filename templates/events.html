@@ -2,12 +2,29 @@
 {% from '_help.html' import tip %}
 {% block title %}Eventos{% endblock %}
 {% block content %}
-<h1 class="text-center tecn-blue-text mb-4">Eventos {{ tip('Crea el evento principal. Los participantes, credenciales y asistencias se organizan por evento.') }}</h1>
+<section class="page-hero">
+    <div>
+        <p class="page-eyebrow">Administracion de evento</p>
+        <h1 class="page-title">Eventos {{ tip('Crea el evento principal. Los participantes, credenciales y asistencias se organizan por evento.') }}</h1>
+        <p class="page-subtitle">Define actividades, reglas de asistencia y proyectos asociados antes de importar participantes.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-outline-primary" href="{{ url_for('register') }}">Participantes</a>
+        <a class="btn tecn-blue text-white" href="{{ url_for('scan') }}">Escanear</a>
+    </div>
+</section>
+
+<div class="status-strip">
+    <div class="status-chip"><span>Eventos</span><strong>{{ events|length }}</strong></div>
+    <div class="status-chip"><span>Proyectos</span><strong>{{ projects|length }}</strong></div>
+    <div class="status-chip"><span>Activos</span><strong>{{ active_event_count }}</strong></div>
+    <div class="status-chip"><span>Flujo</span><strong>Listo</strong></div>
+</div>
 
 <div class="row g-4 mb-4">
     <div class="col-lg-8">
         <div class="card shadow h-100">
-            <div class="card-header tecn-blue text-white">
+            <div class="card-header">
                 <h2 class="h5 mb-0">Crear evento {{ tip('Usa evento para conferencias, talleres, exposiciones o cualquier actividad donde tomaras asistencia.') }}</h2>
             </div>
             <div class="card-body">
@@ -85,7 +102,7 @@
 
     <div class="col-lg-4">
         <div class="card shadow h-100">
-            <div class="card-header tecn-blue text-white">
+            <div class="card-header">
                 <h2 class="h5 mb-0">Agregar proyecto {{ tip('Proyecto es un registro simple asociado a un evento, por ejemplo un proyecto de exposicion.') }}</h2>
             </div>
             <div class="card-body">
@@ -117,7 +134,7 @@
 <div class="row g-4">
     <div class="col-lg-8">
         <div class="card shadow">
-            <div class="card-header tecn-blue text-white">
+            <div class="card-header">
                 <h2 class="h5 mb-0">Eventos registrados</h2>
             </div>
             <div class="card-body">
@@ -158,7 +175,7 @@
 
     <div class="col-lg-4">
         <div class="card shadow">
-            <div class="card-header tecn-blue text-white">
+            <div class="card-header">
                 <h2 class="h5 mb-0">Proyectos</h2>
             </div>
             <div class="card-body">
