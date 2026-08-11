@@ -25,33 +25,47 @@
                 </p>
             </div>
             <div class="col-lg-5 text-lg-end">
-                <a class="btn btn-outline-primary" href="{{ url_for('data') }}">Ver participantes por evento</a>
+                <a class="btn btn-outline-primary" href="{{ url_for('kiosco') }}">Modo kiosco</a>
                 <a class="btn tecn-blue text-white ms-lg-2" href="{{ url_for('data', event_id=latest_event[0]) }}">Abrir este evento</a>
-                <a class="btn btn-outline-primary ms-lg-2" href="{{ url_for('event_detail', event_id=latest_event[0]) }}">Detalle</a>
+                <a class="btn btn-outline-primary ms-lg-2" href="{{ url_for('reports') }}">Reporte final</a>
             </div>
         </div>
     </div>
 </div>
 {% endif %}
 
-<div class="row g-3 mb-4">
-    <div class="col-md-6">
-        <div class="card h-100">
-            <div class="card-body">
-                <p class="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Participantes del evento {{ tip('Cuenta participantes registrados en el evento de referencia.') }}</p>
-                <p class="display-6 mb-0">{{ total_students }}</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-6">
-        <div class="card h-100">
-            <div class="card-body">
-                <p class="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Asistencias del evento {{ tip('Cuenta escaneos guardados en el evento de referencia.') }}</p>
-                <p class="display-6 mb-0">{{ total_attendance }}</p>
-            </div>
-        </div>
+<div class="executive-grid mb-4">
+    <div class="metric-card"><span>Participantes</span><strong>{{ resumen.participantes }}</strong></div>
+    <div class="metric-card"><span>Presentes</span><strong>{{ resumen.presentes }}</strong></div>
+    <div class="metric-card"><span>Pendientes</span><strong>{{ resumen.pendientes }}</strong></div>
+    <div class="metric-card"><span>Asistencia</span><strong>{{ resumen.porcentaje }}%</strong></div>
+    <div class="metric-card"><span>Alumnos</span><strong>{{ resumen.alumnos }}</strong></div>
+    <div class="metric-card"><span>Asesores</span><strong>{{ resumen.asesores }}</strong></div>
+    <div class="metric-card"><span>Registros</span><strong>{{ resumen.asistencias }}</strong></div>
+    <div class="metric-card"><span>Hora pico</span><strong>{{ resumen.hora_pico }}</strong></div>
+</div>
+
+{% if proyectos_asistencia %}
+<div class="card mb-4">
+    <div class="card-header"><h2 class="h5 mb-0">Check-in por proyecto</h2></div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>Proyecto</th><th>Participantes</th><th>Presentes</th><th>Registros</th><th></th></tr></thead>
+            <tbody>
+                {% for proyecto in proyectos_asistencia[:8] %}
+                <tr>
+                    <td>{{ proyecto.name }}</td>
+                    <td>{{ proyecto.participantes }}</td>
+                    <td>{{ proyecto.presentes }}</td>
+                    <td>{{ proyecto.registros }}</td>
+                    <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('asistencia_proyecto', project_id=proyecto.id, event_id=latest_event[0]) }}">Ver</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
+{% endif %}
 
 <div class="card">
     <div class="card-header">
@@ -78,6 +92,13 @@
                         {% for project in projects %}
                             <option value="{{ project[0] }}">{{ project[1] }}</option>
                         {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="report_type" class="form-label">Tipo</label>
+                    <select class="form-select" id="report_type" name="report_type">
+                        <option value="asistencia">Asistencia</option>
+                        <option value="final">Final oficial</option>
                     </select>
                 </div>
                 <div class="col-md-2">

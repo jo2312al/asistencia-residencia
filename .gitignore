@@ -3,3 +3,4 @@ static/qr_codes/*
 static/reports/*
 __pycache__/
 *.pyc
+.deploy/

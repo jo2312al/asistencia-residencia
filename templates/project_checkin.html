@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}Check-in por proyecto{% endblock %}
+{% block content %}
+<section class="mb-6">
+    <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Check-in por proyecto</p>
+    <h1 class="tecn-blue-text !mb-1">{{ project[1] }}</h1>
+    <p class="text-slate-500">Integrantes, registros y ultimo movimiento del proyecto.</p>
+</section>
+
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Nombre</th>
+                    <th>Tipo</th>
+                    <th>Matricula</th>
+                    <th>Carrera</th>
+                    <th>Estado</th>
+                    <th>Registros</th>
+                    <th>Ultima asistencia</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td>{{ row.full_name }}</td>
+                    <td>{{ row.participant_type }}</td>
+                    <td>{{ row.matricula or 'Sin matricula' }}</td>
+                    <td>{{ row.carrera or 'Sin carrera' }}</td>
+                    <td>
+                        {% if row.ultima_asistencia %}
+                        <span class="badge text-bg-success">Presente</span>
+                        {% else %}
+                        <span class="badge text-bg-secondary">Pendiente</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ row.registros }}</td>
+                    <td>{{ row.ultima_asistencia or 'Sin registro' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-center text-muted py-4">Sin participantes en este proyecto.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% block title %}Modo Kiosco{% endblock %}
+{% block content %}
+<section class="kiosk-page">
+    <div class="kiosk-header">
+        <div>
+            <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Modo kiosco</p>
+            <h1>Registro de entrada</h1>
+        </div>
+        <span id="scanner-pill" class="scanner-pill scanner-pill-idle">Preparando</span>
+    </div>
+
+    <div class="kiosk-grid">
+        <section class="kiosk-camera">
+            <div class="kiosk-selectors">
+                <select class="form-select" id="event_id" name="event_id" aria-label="Evento">
+                    <option value="">Registro general</option>
+                    {% for event in events %}
+                    <option value="{{ event[0] }}">{{ event[1] }}{% if event[2] %} - {{ event[2] }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+                <select class="form-select" id="attendance_event_type" name="event_type" aria-label="Tipo de asistencia">
+                    <option value="entrada">Entrada</option>
+                    <option value="salida">Salida</option>
+                    <option value="taller">Taller</option>
+                    <option value="conferencia">Conferencia</option>
+                    <option value="material">Entrega de material</option>
+                </select>
+            </div>
+            <div class="scanner-video-frame kiosk-video-frame">
+                <video id="qr-video" autoplay playsinline muted></video>
+                <div class="scanner-reticle" aria-hidden="true"></div>
+                <div id="scanner-feedback" class="scanner-feedback scanner-feedback-hidden" aria-live="assertive"></div>
+            </div>
+            <canvas id="qr-canvas" class="d-none"></canvas>
+            <div class="scanner-actions">
+                <button type="button" class="btn btn-outline-primary" id="restart-scanner-btn">Reiniciar camara</button>
+                <button type="button" class="btn btn-outline-secondary" id="pause-scanner-btn">Pausar</button>
+            </div>
+        </section>
+
+        <aside class="kiosk-panel">
+            <div id="qr-result" class="scanner-status scanner-status-info">Camara lista para iniciar.</div>
+            <form id="manual-qr-form" class="scanner-manual">
+                <label for="manual_qr_data" class="form-label">Captura manual</label>
+                <div class="input-group input-group-lg">
+                    <input type="text" class="form-control" id="manual_qr_data" placeholder="Token o matricula">
+                    <button class="btn btn-primary" type="submit">Registrar</button>
+                </div>
+            </form>
+            <div class="scanner-history">
+                <div class="d-flex align-items-center justify-content-between gap-2">
+                    <h2 class="h5 mb-0">Ultimos registros</h2>
+                    <span class="text-muted" id="scan-count">0</span>
+                </div>
+                <div id="scan-history-list" class="scanner-history-list">
+                    <p class="text-muted mb-0">Aun no hay registros en esta sesion.</p>
+                </div>
+            </div>
+        </aside>
+    </div>
+</section>
+{% endblock %}

@@ -645,6 +645,36 @@ def datetime_local_value(value):
     return str(value).replace(" ", "T")[:16]
 
 
+
+
+def evento_permitido_para_usuario(event_id):
+    event_id_normalizado = normalizar_evento_permiso(event_id)
+    if not event_id_normalizado:
+        return not event_id
+    if current_user.role == "admin":
+        return True
+    allowed = db_manager.get_user_event_permissions(current_user.id)
+    return not allowed or event_id_normalizado in set(allowed)
+
+
+def normalizar_evento_permiso(event_id):
+    try:
+        return int(event_id) if event_id else None
+    except (TypeError, ValueError):
+        return None
+
+
+def respuesta_evento_no_autorizado(api=False):
+    mensaje = "No tienes permiso para consultar este evento"
+    if api:
+        return jsonify({"success": False, "error": mensaje}), 403
+    flash(mensaje, "warning")
+    return redirect(url_for("role_home"))
+
+
+def evento_no_autorizado(event_id):
+    return event_id and not evento_permitido_para_usuario(event_id)
+
 def filter_events_for_current_user(events):
     if not current_user.is_authenticated or current_user.role == "admin":
         return events
@@ -711,12 +741,16 @@ def admin_dashboard():
     latest_event = db_manager.get_latest_event()
     latest_event_id = latest_event[0] if latest_event else None
     projects = db_manager.get_projects_by_event(latest_event_id) if latest_event_id else []
+    resumen = resumen_evento_seguro(latest_event_id)
+    proyectos_asistencia = proyectos_asistencia_seguro(latest_event_id)
     return render_template(
         "admin_dashboard.html",
         projects=projects,
         latest_event=latest_event,
-        total_students=db_manager.get_total_students(latest_event_id),
-        total_attendance=db_manager.get_total_attendance(latest_event_id),
+        resumen=resumen,
+        proyectos_asistencia=proyectos_asistencia,
+        total_students=resumen["participantes"],
+        total_attendance=resumen["asistencias"],
     )
 
 
@@ -724,8 +758,15 @@ def admin_dashboard():
 @login_required
 @role_required("admin", "staff")
 def staff_dashboard():
-    projects = db_manager.get_all_projects()
-    return render_template("staff_dashboard.html", projects=projects)
+    latest_event = db_manager.get_latest_event()
+    latest_event_id = latest_event[0] if latest_event else None
+    projects = db_manager.get_projects_by_event(latest_event_id) if latest_event_id else []
+    return render_template(
+        "staff_dashboard.html",
+        projects=projects,
+        latest_event=latest_event,
+        resumen=resumen_evento_seguro(latest_event_id),
+    )
 
 
 @app.route("/guest/dashboard")
@@ -788,6 +829,8 @@ def update_user_role(username):
         if not updated:
             return jsonify({"success": False, "error": "Usuario no encontrado"}), 404
         return jsonify({"success": True, "message": "Rol actualizado correctamente"})
+    except PermissionError as e:
+        return jsonify({"success": False, "error": str(e)}), 403
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
@@ -1209,6 +1252,8 @@ def event_fields_api(event_id):
 @login_required
 @role_required("admin", "staff", api=True)
 def event_projects_api(event_id):
+    if evento_no_autorizado(event_id):
+        return respuesta_evento_no_autorizado(api=True)
     if not db_manager.get_event(event_id):
         return jsonify({"success": False, "error": "Evento no encontrado"}), 404
 
@@ -1226,13 +1271,53 @@ def scan():
     return render_template("scan.html", events=filter_events_for_current_user(db_manager.get_active_events()))
 
 
+@app.route("/kiosco")
+@login_required
+@role_required("admin", "staff")
+def kiosco():
+    return render_template("kiosco.html", events=filter_events_for_current_user(db_manager.get_active_events()))
+
+
+@app.route("/proyectos/<int:project_id>/asistencia")
+@login_required
+@role_required("admin", "staff")
+def asistencia_proyecto(project_id):
+    event_id = request.args.get("event_id", type=int)
+    project = db_manager.get_project(project_id)
+    if not project:
+        flash("Proyecto no encontrado", "warning")
+        return redirect(url_for("data"))
+    event_id = event_id or event_id_desde_proyecto(project)
+    if evento_no_autorizado(event_id):
+        return respuesta_evento_no_autorizado()
+    rows = db_manager.detalle_asistencia_proyecto(event_id, project_id) if event_id else []
+    return render_template("project_checkin.html", project=project, event_id=event_id, rows=rows)
+
+
+def event_id_desde_proyecto(project):
+    return project[4] if len(project) > 4 else None
+
+
+def resumen_evento_seguro(event_id):
+    if not event_id:
+        return resumen_evento_vacio()
+    return db_manager.resumen_ejecutivo_evento(event_id)
+
+
+def proyectos_asistencia_seguro(event_id):
+    return db_manager.proyectos_con_asistencia(event_id) if event_id else []
+
+
+def resumen_evento_vacio():
+    return {"participantes": 0, "asistencias": 0, "presentes": 0, "pendientes": 0, "porcentaje": 0, "alumnos": 0, "asesores": 0, "hora_pico": "Sin registros"}
+
+
 @app.route("/reports")
 @login_required
 @role_required("admin", "staff")
 def reports():
-    projects = db_manager.get_all_projects()
     events = filter_events_for_current_user(db_manager.get_all_events())
-    return render_template("reports.html", projects=projects, events=events)
+    return render_template("reports.html", projects=[], events=events)
 
 
 @app.route("/data")
@@ -1240,6 +1325,8 @@ def reports():
 @role_required("admin", "staff")
 def data():
     filters = get_participant_filters()
+    if evento_no_autorizado(filters["event_id_filter"]):
+        return respuesta_evento_no_autorizado()
     page_data = get_participant_page(filters)
     context = build_data_context(filters, page_data)
     return render_template("data.html", **context)
@@ -1882,24 +1969,48 @@ def preview_excel():
 def register_attendance():
     try:
         data = request.get_json()
-        if not data or "qr_data" not in data:
-            return jsonify({"success": False, "error": "Datos de QR no proporcionados"}), 400
-
-        qr_data = data["qr_data"]
-        event_id = data.get("event_id")
-        try:
-            event_id = int(event_id) if event_id else None
-        except (TypeError, ValueError):
-            event_id = None
-        event_type = data.get("event_type") or "entrada"
-        result = attendance_manager.register_attendance_by_qr_data(qr_data, event_id, event_type)
-        if result == "Asistencia registrada exitosamente":
-            return jsonify({"success": True, "message": result})
-        if result == "Este alumno ya fue tomado asistencia":
-            return jsonify({"success": False, "error": result})
-        return jsonify({"success": False, "error": result}), 400
+        error = validar_peticion_asistencia(data)
+        if error:
+            return jsonify({"success": False, "error": error}), 400
+        result = registrar_asistencia_desde_payload(data)
+        return respuesta_registro_asistencia(result)
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+def validar_peticion_asistencia(data):
+    if not data or "qr_data" not in data:
+        return "Datos de QR no proporcionados"
+    event_id = normalizar_evento_asistencia(data.get("event_id"))
+    if evento_no_autorizado(event_id):
+        return "No tienes permiso para registrar asistencia en este evento"
+    return None
+
+
+def registrar_asistencia_desde_payload(data):
+    event_id = normalizar_evento_asistencia(data.get("event_id"))
+    event_type = data.get("event_type") or "entrada"
+    return attendance_manager.register_attendance_by_qr_data(data["qr_data"], event_id, event_type)
+
+
+def normalizar_evento_asistencia(event_id):
+    try:
+        return int(event_id) if event_id else None
+    except (TypeError, ValueError):
+        return None
+
+
+def respuesta_registro_asistencia(result):
+    if result == "Asistencia registrada exitosamente":
+        return jsonify({"success": True, "message": result})
+    if resultado_es_duplicado(result):
+        return jsonify({"success": False, "duplicate": True, "error": result})
+    return jsonify({"success": False, "error": result}), 400
+
+
+def resultado_es_duplicado(resultado):
+    texto = (resultado or "").lower()
+    return "duplicada" in texto or "ya fue tomado" in texto
 
 
 @app.route("/get_projects")
@@ -1945,6 +2056,8 @@ def generate_report():
     try:
         report_path = build_requested_report(request.form)
         return jsonify({"success": True, "report_path": report_path})
+    except PermissionError as e:
+        return jsonify({"success": False, "error": str(e)}), 403
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
@@ -1953,6 +2066,10 @@ def generate_report():
 
 def build_requested_report(data):
     params = report_request_params(data)
+    if evento_no_autorizado(params["event_id"]):
+        raise PermissionError("No tienes permiso para generar reportes de este evento")
+    if params["report_type"] == "final" and not params["event_id"]:
+        raise ValueError("Selecciona un evento para generar el reporte final oficial")
     if params["event_id"]:
         return build_event_report(params)
     return build_legacy_report(params)
@@ -1965,10 +2082,15 @@ def report_request_params(data):
         "project_id": data.get("project_id") or None,
         "event_id": data.get("event_id") or None,
         "format": data.get("format"),
+        "report_type": data.get("report_type") or "asistencia",
     }
 
 
 def build_event_report(params):
+    if params["report_type"] == "final" and params["format"] == "pdf":
+        return db_manager.exportar_reporte_final_evento_pdf(params["event_id"])
+    if params["report_type"] == "final" and params["format"] == "excel":
+        return db_manager.exportar_reporte_final_evento_excel(params["event_id"])
     if params["format"] == "pdf":
         return db_manager.export_event_attendance_to_pdf(params["event_id"], params["project_id"], params["start_date"], params["end_date"])
     if params["format"] == "excel":

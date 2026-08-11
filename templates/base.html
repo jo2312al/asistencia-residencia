@@ -61,6 +61,7 @@
                         </div>
                     </div>
                     <a class="app-nav-link app-nav-primary" href="{{ url_for('scan') }}">Escanear</a>
+                    <a class="app-nav-link" href="{{ url_for('kiosco') }}">Kiosco</a>
                     <div class="app-nav-group">
                         <button class="app-nav-link app-nav-trigger" type="button" data-submenu-toggle aria-expanded="false">Administracion</button>
                         <div class="app-submenu">
@@ -72,6 +73,7 @@
                     {% elif current_user.role == 'staff' %}
                     <a class="app-nav-link" href="{{ url_for('staff_dashboard') }}">Dashboard</a>
                     <a class="app-nav-link app-nav-primary" href="{{ url_for('scan') }}">Escanear</a>
+                    <a class="app-nav-link" href="{{ url_for('kiosco') }}">Kiosco</a>
                     <div class="app-nav-group">
                         <button class="app-nav-link app-nav-trigger" type="button" data-submenu-toggle aria-expanded="false">Consultas</button>
                         <div class="app-submenu">

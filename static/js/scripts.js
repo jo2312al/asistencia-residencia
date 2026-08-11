@@ -222,9 +222,14 @@ function buildAttendanceRequest(qrData) {
 
 function handleAttendanceResult(data, afterClose) {
     console.log("Respuesta de /register_attendance:", data);
-    const type = data.success ? 'success' : 'danger';
+    const type = attendanceFeedbackType(data);
     const message = data.success ? data.message : (data.error || 'No se pudo registrar');
     showScannerFeedback(type, message, afterClose);
+}
+
+function attendanceFeedbackType(data) {
+    if (data.success) return 'success';
+    return data.duplicate ? 'warning' : 'danger';
 }
 
 function handleAttendanceError(error, afterClose) {
@@ -256,7 +261,7 @@ function showScannerFeedback(type, message, afterClose) {
     if (elements) addScanHistory(elements, type, message);
     if (elements) showScannerOverlay(elements, type, message);
     notifyScanResult(type);
-    window.setTimeout(() => finishScannerFeedback(afterClose), 1250);
+    window.setTimeout(() => finishScannerFeedback(afterClose), 1800);
 }
 
 function finishScannerFeedback(afterClose) {
@@ -276,8 +281,14 @@ function showScannerOverlay(elements, type, message) {
 }
 
 function overlayFeedbackHtml(type, message) {
-    const title = type === 'success' ? 'Asistencia tomada' : 'Revisar escaneo';
+    const title = scannerFeedbackTitle(type);
     return `<strong>${title}</strong><span>${escapeHtml(message)}</span>`;
+}
+
+function scannerFeedbackTitle(type) {
+    if (type === 'success') return 'Asistencia tomada';
+    if (type === 'warning') return 'Registro existente';
+    return 'Revisar escaneo';
 }
 
 function hideScannerOverlay(elements) {
@@ -727,6 +738,16 @@ function buildPreviewMissingHtml(result) {
     return `<p class="text-danger">Faltan columnas: ${result.missing.map(escapeHtml).join(', ')}</p>`;
 }
 
+
+function initializeReportProjectLoader() {
+    const form = document.getElementById('report-form');
+    const eventSelect = form ? form.querySelector('#event_id') : null;
+    const projectSelect = form ? form.querySelector('#project_id') : null;
+    if (!eventSelect || !projectSelect) return;
+    eventSelect.addEventListener('change', () => loadEventProjects(eventSelect.value, 'project_id'));
+    loadEventProjects(eventSelect.value, 'project_id');
+}
+
 // Formulario de reportes (para /dashboard o /reports)
 function initializeReportForm() {
     console.log("Inicializando formulario de reportes");
@@ -792,6 +813,7 @@ document.addEventListener('DOMContentLoaded', function() {
         initializeExcelPreview();
     }
     if (document.getElementById('report-form')) {
+        initializeReportProjectLoader();
         initializeReportForm();
     }
 });

@@ -92,11 +92,19 @@ class AttendanceManager:
         try:
             result = self._register_student_id(credential["legacy_student_id"])
             if not result["attendance_id"]:
-                return DUPLICATE_MESSAGE
+                return self._duplicate_message(credential, event_id, event_type)
             self._record_attendance_event(credential, result, event_id, event_type)
             return SUCCESS_MESSAGE
         except Exception as error:
             return f"Error al registrar asistencia: {error}"
+
+    def _duplicate_message(self, credential, event_id, event_type):
+        ultimo = self.db_manager.ultima_asistencia_participante(credential["participant_id"], event_id, event_type)
+        if not ultimo or not ultimo.get("timestamp"):
+            return DUPLICATE_MESSAGE
+        hora = ultimo["timestamp"].strftime("%H:%M")
+        tipo = ultimo.get("event_type") or event_type or "entrada"
+        return f"Asistencia duplicada: {tipo} ya registrada a las {hora}"
 
     def _record_attendance_event(self, credential, result, event_id, event_type):
         self.db_manager.record_attendance_event(

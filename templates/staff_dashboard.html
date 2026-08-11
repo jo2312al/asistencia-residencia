@@ -7,6 +7,15 @@
     <p class="text-slate-500">Acceso rapido para escanear, consultar participantes y generar reportes.</p>
 </section>
 
+{% if latest_event %}
+<div class="executive-grid mb-4">
+    <div class="metric-card"><span>Evento</span><strong>{{ latest_event[1] }}</strong></div>
+    <div class="metric-card"><span>Presentes</span><strong>{{ resumen.presentes }}</strong></div>
+    <div class="metric-card"><span>Pendientes</span><strong>{{ resumen.pendientes }}</strong></div>
+    <div class="metric-card"><span>Asistencia</span><strong>{{ resumen.porcentaje }}%</strong></div>
+</div>
+{% endif %}
+
 <div class="row g-3 mb-4">
     <div class="col-md-6">
         <div class="card h-100">
@@ -14,6 +23,7 @@
                 <h2 class="h5 mb-2">Tomar asistencia</h2>
                 <p class="text-slate-500">Abre el escaner y registra entradas con QR por evento.</p>
                 <a class="btn tecn-blue text-white" href="{{ url_for('scan') }}">Abrir escaner</a>
+                <a class="btn btn-outline-primary ms-2" href="{{ url_for('kiosco') }}">Modo kiosco</a>
             </div>
         </div>
     </div>
@@ -50,6 +60,13 @@
                         {% for project in projects %}
                         <option value="{{ project[0] }}">{{ project[1] }}</option>
                         {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="report_type" class="form-label">Tipo</label>
+                    <select class="form-select" id="report_type" name="report_type">
+                        <option value="asistencia">Asistencia</option>
+                        <option value="final">Final oficial</option>
                     </select>
                 </div>
                 <div class="col-md-2">
