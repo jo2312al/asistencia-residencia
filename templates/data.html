@@ -4,7 +4,7 @@
 {% block content %}
 {% macro sort_link(key, label) -%}
     {% set next_dir = 'desc' if sort_by == key and sort_dir == 'asc' else 'asc' %}
-    <a class="text-slate-900 text-decoration-none" href="{{ url_for('data', page=1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=key, dir=next_dir, details='1' if show_details else None) }}">
+    <a class="text-slate-900 text-decoration-none" href="{{ url_for('participantes.datos', page=1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=key, dir=next_dir, details='1' if show_details else None) }}">
         {{ label }}
         {% if sort_by == key %}
             <span aria-hidden="true">{{ 'ASC' if sort_dir == 'asc' else 'DESC' }}</span>
@@ -18,12 +18,12 @@
         <p class="page-subtitle">Consulta, ordena y descarga credenciales sin cargar QR pesados en la tabla.</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-outline-primary" href="{{ url_for('register') }}">Agregar participante</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('participantes.registrar') }}">Agregar participante</a>
     </div>
 </section>
 
 <div class="filter-bar">
-        <form method="GET" action="{{ url_for('data') }}">
+        <form method="GET" action="{{ url_for('participantes.datos') }}">
             <div class="row g-3">
                 <div class="col-md-3">
                     <label for="event_filter" class="form-label">Evento {{ tip('Obligatorio para consultar o enviar credenciales.') }}</label>
@@ -57,7 +57,7 @@
                 </div>
                 <div class="col-12 d-flex flex-wrap gap-2">
                     <button type="submit" class="btn btn-primary">Buscar</button>
-                    <a href="{{ url_for('data') }}" class="btn btn-secondary">Limpiar</a>
+                    <a href="{{ url_for('participantes.datos') }}" class="btn btn-secondary">Limpiar</a>
                 </div>
             </div>
         </form>
@@ -74,29 +74,29 @@
         </div>
 
         <div class="mb-3 d-flex flex-wrap gap-2">
-            <a href="{{ url_for('download_all_qrs', event_id=event_id_filter) }}" class="btn btn-primary">
+            <a href="{{ url_for('participantes.descargar_todos_qrs', event_id=event_id_filter) }}" class="btn btn-primary">
                 Descargar QR (ZIP)
             </a>
-            <a href="{{ url_for('download_all_qrs_pdf', event_id=event_id_filter) }}" class="btn btn-primary">
+            <a href="{{ url_for('participantes.descargar_todos_qrs_pdf', event_id=event_id_filter) }}" class="btn btn-primary">
                 Credenciales (PDF)
             </a>
-            <a href="{{ url_for('download_all_credentials_rect_pdf', event_id=event_id_filter) }}" class="btn btn-outline-primary">
+            <a href="{{ url_for('participantes.descargar_todos_credenciales_horizontal_pdf', event_id=event_id_filter) }}" class="btn btn-outline-primary">
                 Credenciales rectangulares
             </a>
-            <a href="{{ url_for('download_credentials_by_project', event_id=event_id_filter) }}" class="btn btn-outline-primary">
+            <a href="{{ url_for('participantes.descargar_credenciales_por_proyecto', event_id=event_id_filter) }}" class="btn btn-outline-primary">
                 Credenciales por proyecto (ZIP)
             </a>
-            <form method="POST" action="{{ url_for('send_event_credentials') }}" class="d-inline">
+            <form method="POST" action="{{ url_for('participantes.enviar_evento_credenciales') }}" class="d-inline">
                 <input type="hidden" name="event_id" value="{{ event_id_filter }}">
                 <button type="submit" class="btn btn-outline-success">Enviar credenciales</button>
                 {{ tip('Envia credenciales del evento. Si hay asesor por proyecto, agrupa envios al asesor.') }}
             </form>
             {% if show_details %}
-            <a href="{{ url_for('data', page=page, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir) }}" class="btn btn-outline-secondary">
+            <a href="{{ url_for('participantes.datos', page=page, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir) }}" class="btn btn-outline-secondary">
                 Ocultar detalles
             </a>
             {% else %}
-            <a href="{{ url_for('data', page=page, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir, details='1') }}" class="btn btn-outline-secondary">
+            <a href="{{ url_for('participantes.datos', page=page, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir, details='1') }}" class="btn btn-outline-secondary">
                 Cargar detalles
             </a>
             {% endif %}
@@ -141,17 +141,16 @@
                                     <span class="text-muted">No cargados</span>
                                 {% endif %}
                             </td>
-                            <td class="text-nowrap">
-                                <div class="d-flex flex-column gap-2">
-                                    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('download_student_credential_pdf', student_id=student['id']) }}">
+                            <td class="text-end text-nowrap">
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                                         Credencial
-                                    </a>
-                                    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('download_student_credential_rect_pdf', student_id=student['id']) }}">
-                                        Horizontal
-                                    </a>
-                                    <a class="btn btn-sm btn-outline-success" href="{{ url_for('abrir_credencial_digital_participante', student_id=student['id']) }}" target="_blank" rel="noopener">
-                                        Digital
-                                    </a>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li><a class="dropdown-item" href="{{ url_for('participantes.descargar_participante_credencial_pdf', student_id=student['id']) }}">Vertical PDF</a></li>
+                                        <li><a class="dropdown-item" href="{{ url_for('participantes.descargar_participante_credencial_horizontal_pdf', student_id=student['id']) }}">Horizontal PDF</a></li>
+                                        <li><a class="dropdown-item" href="{{ url_for('participantes.abrir_credencial_digital_participante', student_id=student['id']) }}" target="_blank" rel="noopener">Digital</a></li>
+                                    </ul>
                                 </div>
                             </td>
                         </tr>
@@ -169,7 +168,7 @@
         <nav aria-label="Paginacion de participantes">
             <ul class="pagination justify-content-center">
                 <li class="page-item {% if page == 1 %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('data', page=page-1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir, details='1' if show_details else None) }}" aria-label="Anterior">
+                    <a class="page-link" href="{{ url_for('participantes.datos', page=page-1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir, details='1' if show_details else None) }}" aria-label="Anterior">
                         <span aria-hidden="true">&laquo;</span>
                     </a>
                 </li>
@@ -177,7 +176,7 @@
                 {% for p in range(1, total_pages + 1) %}
                     {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
                         <li class="page-item {% if p == page %}active{% endif %}">
-                            <a class="page-link" href="{{ url_for('data', page=p, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir, details='1' if show_details else None) }}">{{ p }}</a>
+                            <a class="page-link" href="{{ url_for('participantes.datos', page=p, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir, details='1' if show_details else None) }}">{{ p }}</a>
                         </li>
                     {% elif p == page - 3 or p == page + 3 %}
                         <li class="page-item disabled"><span class="page-link">...</span></li>
@@ -185,7 +184,7 @@
                 {% endfor %}
 
                 <li class="page-item {% if page == total_pages %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('data', page=page+1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir, details='1' if show_details else None) }}" aria-label="Siguiente">
+                    <a class="page-link" href="{{ url_for('participantes.datos', page=page+1, matricula=matricula_search, apellido_p=apellido_p_search, project_id=project_id_filter, event_id=event_id_filter, sort=sort_by, dir=sort_dir, details='1' if show_details else None) }}" aria-label="Siguiente">
                         <span aria-hidden="true">&raquo;</span>
                     </a>
                 </li>

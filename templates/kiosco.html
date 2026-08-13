@@ -1,11 +1,17 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% block title %}Modo Kiosco{% endblock %}
 {% block content %}
 <section class="kiosk-page">
     <div class="kiosk-header">
-        <div>
-            <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Modo kiosco</p>
-            <h1>Registro de entrada</h1>
+        <div class="kiosk-title-group">
+            <a class="kiosk-back-link" href="{{ url_for('acceso.rol_inicio') }}" aria-label="Volver al panel">
+                <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+                <span>Volver</span>
+            </a>
+            <div>
+                <p class="kiosk-eyebrow">Modo kiosco</p>
+                <h1>Registro de entrada</h1>
+            </div>
         </div>
         <span id="scanner-pill" class="scanner-pill scanner-pill-idle">Preparando</span>
     </div>

@@ -9,8 +9,8 @@
         <p class="page-subtitle">Define actividades, reglas de asistencia y proyectos asociados antes de importar participantes.</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-outline-primary" href="{{ url_for('register') }}">Participantes</a>
-        <a class="btn tecn-blue text-white" href="{{ url_for('scan') }}">Escanear</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('participantes.registrar') }}">Participantes</a>
+        <a class="btn tecn-blue text-white" href="{{ url_for('asistencia.escanear') }}">Escanear</a>
     </div>
 </section>
 
@@ -23,12 +23,12 @@
 
 <div class="row g-4 mb-4">
     <div class="col-lg-8">
-        <div class="card shadow h-100">
+        <div class="card h-100">
             <div class="card-header">
                 <h2 class="h5 mb-0">Crear evento {{ tip('Usa evento para conferencias, talleres, exposiciones o cualquier actividad donde tomaras asistencia.') }}</h2>
             </div>
             <div class="card-body">
-                <form method="POST" action="{{ url_for('create_event') }}">
+                <form method="POST" action="{{ url_for('eventos.crear_evento') }}">
                     <div class="row g-3">
                         <div class="col-md-8">
                             <label for="name" class="form-label">Nombre</label>
@@ -101,12 +101,12 @@
     </div>
 
     <div class="col-lg-4">
-        <div class="card shadow h-100">
+        <div class="card h-100">
             <div class="card-header">
                 <h2 class="h5 mb-0">Agregar proyecto {{ tip('Proyecto es un registro simple asociado a un evento, por ejemplo un proyecto de exposicion.') }}</h2>
             </div>
             <div class="card-body">
-                <form method="POST" action="{{ url_for('create_project') }}">
+                <form method="POST" action="{{ url_for('eventos.crear_proyecto') }}">
                     <div class="mb-3">
                         <label for="project_name" class="form-label">Nombre del proyecto</label>
                         <input type="text" class="form-control" id="project_name" name="name" placeholder="Sistema de riego inteligente" required>
@@ -133,7 +133,7 @@
 
 <div class="row g-4">
     <div class="col-lg-8">
-        <div class="card shadow">
+        <div class="card">
             <div class="card-header">
                 <h2 class="h5 mb-0">Eventos registrados</h2>
             </div>
@@ -158,7 +158,7 @@
                                 <td>{{ event[6] }}</td>
                                 <td>
                                     {{ event[5] or 'Sin lugar' }}<br>
-                                    <a class="small" href="{{ url_for('event_detail', event_id=event[0]) }}">Ver detalle</a>
+                                    <a class="small" href="{{ url_for('eventos.evento_detail', event_id=event[0]) }}">Ver detalle</a>
                                 </td>
                             </tr>
                             {% else %}
@@ -174,7 +174,7 @@
     </div>
 
     <div class="col-lg-4">
-        <div class="card shadow">
+        <div class="card">
             <div class="card-header">
                 <h2 class="h5 mb-0">Proyectos</h2>
             </div>

@@ -8,7 +8,7 @@
         <p class="page-subtitle">Controla usuarios, roles y permisos por evento sin entrar a la operacion diaria.</p>
     </div>
     <div class="page-actions">
-        <a class="btn tecn-blue text-white" href="{{ url_for('create_user') }}">Gestionar usuarios</a>
+        <a class="btn tecn-blue text-white" href="{{ url_for('usuarios.crear_usuario') }}">Gestionar usuarios</a>
     </div>
 </section>
 
@@ -20,7 +20,7 @@
 </div>
 
 <div class="quick-actions">
-    <a class="quick-action quick-action-primary" href="{{ url_for('create_user') }}"><strong>Usuarios y permisos</strong><span>Crea cuentas y asigna eventos a staff o consulta.</span></a>
+    <a class="quick-action quick-action-primary" href="{{ url_for('usuarios.crear_usuario') }}"><strong>Usuarios y permisos</strong><span>Crea cuentas y asigna eventos a staff o consulta.</span></a>
     <div class="quick-action"><strong>Roles separados</strong><span>Admin superior gobierna accesos; admin opera eventos.</span></div>
     <div class="quick-action"><strong>Acceso por evento</strong><span>Staff sin evento asignado no puede escanear ni consultar.</span></div>
 </div>

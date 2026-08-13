@@ -1,5 +1,5 @@
-// scripts.js
-// Inicializar escáner QR (para /scan)
+﻿// scripts.js
+// Inicializar escÃ¡ner QR (para /scan)
 const scannerState = {
     stream: null,
     active: false,
@@ -59,12 +59,26 @@ function stopQRScanner() {
 async function startQRScanner(elements) {
     stopQRScanner();
     setScannerPill(elements, 'idle', 'Abriendo camara');
+    if (!window.isSecureContext) return showSecureContextError(elements.result);
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        return renderScannerStatus(elements.result, 'danger', 'El navegador no soporta acceso a la camara. Usa captura manual.');
+        return renderScannerStatus(elements.result, 'danger', 'Este navegador no permite abrir la camara. Usa captura manual o prueba con Chrome/Edge actualizado.');
     }
     scannerState.stream = await openCameraStream();
     if (!scannerState.stream) return showCameraError(elements.result);
     await playScannerVideo(elements);
+}
+
+function showSecureContextError(resultContainer) {
+    const secureUrl = buildSecureScannerUrl();
+    renderScannerStatus(resultContainer, 'danger', `La camara requiere HTTPS. Abre esta direccion: ${secureUrl}. Tambien puedes usar captura manual.`);
+}
+
+function buildSecureScannerUrl() {
+    const path = `${window.location.pathname}${window.location.search}`;
+    if (window.location.hostname === 'ec2-18-223-120-47.us-east-2.compute.amazonaws.com') {
+        return `https://18-223-120-47.sslip.io:8080${path}`;
+    }
+    return `https://${window.location.host}${path}`;
 }
 
 async function openCameraStream() {
@@ -614,7 +628,7 @@ function initializeHelpTooltips() {
 
 // Formulario de registro (para /register)
 function initializeGenerateQRForm() {
-    console.log("Inicializando formulario de generación de QR");
+    console.log("Inicializando formulario de generaciÃ³n de QR");
     const form = document.getElementById('register-form');
     if (!form) return;
     form.addEventListener('submit', (event) => submitGenerateQR(event, form));

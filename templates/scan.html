@@ -2,10 +2,12 @@
 {% from '_help.html' import tip %}
 {% block title %}Escanear QR{% endblock %}
 {% block content %}
-<section class="mb-6">
-    <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Asistencia</p>
-    <h1 class="tecn-blue-text !mb-1">Escanear QR {{ tip('Selecciona el evento correcto antes de escanear para registrar la asistencia en el lugar adecuado.') }}</h1>
-    <p class="text-slate-500">Selecciona el evento activo y escanea la credencial del participante.</p>
+<section class="page-hero scanner-hero">
+    <div>
+        <p class="page-eyebrow">Operacion</p>
+        <h1 class="page-title">Escaner QR {{ tip('Selecciona el evento correcto antes de escanear para registrar la asistencia en el lugar adecuado.') }}</h1>
+        <p class="page-subtitle">Selecciona evento, tipo de registro y escanea la credencial del participante.</p>
+    </div>
 </section>
 
 {% if scanner_locked %}

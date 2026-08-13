@@ -12,12 +12,12 @@
 
 <div class="row g-4">
     <div class="col-xl-4">
-    <div class="card shadow mb-4">
+    <div class="card mb-4">
         <div class="card-header">
             <h2 class="h5 mb-0">Alta de usuario {{ tip('Crea accesos para personas que administraran, escanearan o consultaran reportes.') }}</h2>
         </div>
         <div class="card-body">
-            <form id="create-user-form" method="POST" action="{{ url_for('create_user') }}">
+            <form id="create-user-form" method="POST" action="{{ url_for('usuarios.crear_usuario') }}">
                 <div class="mb-3">
                     <label for="username" class="form-label">Nombre de usuario</label>
                     <input type="text" class="form-control" id="username" name="username" required>
@@ -42,7 +42,7 @@
     </div>
 
     <div class="col-xl-8">
-    <div class="card shadow">
+    <div class="card">
         <div class="card-header">
             <h2 class="h5 mb-0">Usuarios existentes {{ tip('Puedes cambiar roles, excepto el tuyo propio para evitar quedarte sin acceso.') }}</h2>
         </div>
@@ -72,7 +72,7 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <form method="POST" action="{{ url_for('update_user_events', username=user[0]) }}" class="d-flex flex-column gap-2">
+                                <form method="POST" action="{{ url_for('usuarios.actualizar_usuario_eventos', username=user[0]) }}" class="d-flex flex-column gap-2">
                                     <select class="form-select form-select-sm" name="event_ids" multiple size="3" {% if user[1] in ['adminsuperior', 'admin'] %}disabled{% endif %}>
                                         {% for event in events %}
                                         <option value="{{ event[0] }}" {% if event[0] in event_permissions.get(user[0], []) %}selected{% endif %}>{{ event[1] }}</option>

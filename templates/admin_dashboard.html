@@ -13,21 +13,21 @@
         {% endif %}
     </div>
     <div class="page-actions">
-        <a class="btn btn-outline-primary" href="{{ url_for('events') }}">Eventos</a>
-        <a class="btn tecn-blue text-white" href="{{ url_for('scan') }}">Escanear</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('eventos.events') }}">Eventos</a>
+        <a class="btn tecn-blue text-white" href="{{ url_for('asistencia.escanear') }}">Escanear</a>
     </div>
 </section>
 
 <div class="quick-actions">
-    <a class="quick-action quick-action-primary" href="{{ url_for('register') }}">
+    <a class="quick-action quick-action-primary" href="{{ url_for('participantes.registrar') }}">
         <strong>Registrar participantes</strong>
         <span>Alta manual o carga por Excel para el evento.</span>
     </a>
-    <a class="quick-action" href="{{ url_for('data', event_id=latest_event[0]) if latest_event else url_for('data') }}">
+    <a class="quick-action" href="{{ url_for('participantes.datos', event_id=latest_event[0]) if latest_event else url_for('participantes.datos') }}">
         <strong>Credenciales</strong>
         <span>Descarga PDF, horizontal, digital o ZIP por proyecto.</span>
     </a>
-    <a class="quick-action" href="{{ url_for('reports') }}">
+    <a class="quick-action" href="{{ url_for('reportes.reports') }}">
         <strong>Reportes</strong>
         <span>Genera lista de asistencia o reporte final oficial.</span>
     </a>
@@ -41,8 +41,8 @@
             <p>{{ latest_event[7] }}{% if latest_event[5] %} / {{ latest_event[5] }}{% endif %}{% if latest_event[3] %} / {{ latest_event[3] }}{% endif %}</p>
         </div>
         <div class="action-row">
-            <a class="btn btn-outline-primary" href="{{ url_for('kiosco') }}">Modo kiosco</a>
-            <a class="btn tecn-blue text-white" href="{{ url_for('data', event_id=latest_event[0]) }}">Abrir evento</a>
+            <a class="btn btn-outline-primary" href="{{ url_for('asistencia.kiosco') }}">Modo kiosco</a>
+            <a class="btn tecn-blue text-white" href="{{ url_for('participantes.datos', event_id=latest_event[0]) }}">Abrir evento</a>
         </div>
     </div>
     <div class="executive-grid">
@@ -76,7 +76,7 @@
                     <td>{{ proyecto.participantes }}</td>
                     <td>{{ proyecto.presentes }}</td>
                     <td>{{ proyecto.registros }}</td>
-                    <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('asistencia_proyecto', project_id=proyecto.id, event_id=latest_event[0]) }}">Ver</a></td>
+                    <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('asistencia.asistencia_proyecto', project_id=proyecto.id, event_id=latest_event[0]) }}">Ver</a></td>
                 </tr>
                 {% endfor %}
             </tbody>

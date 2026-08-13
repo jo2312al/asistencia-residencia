@@ -2,11 +2,17 @@
 {% from '_help.html' import tip %}
 {% block title %}Registrar Participantes{% endblock %}
 {% block content %}
-<h1 class="text-center tecn-blue-text mb-4">Registrar Participantes - AsisTec {{ tip('Primero elige evento; despues el sistema muestra proyectos y campos adicionales de ese evento.') }}</h1>
+<section class="page-hero">
+    <div>
+        <p class="page-eyebrow">Participantes</p>
+        <h1 class="page-title">Registrar participantes {{ tip('Primero elige evento; despues el sistema muestra proyectos y campos adicionales de ese evento.') }}</h1>
+        <p class="page-subtitle">Alta manual e importacion desde Excel para un evento especifico.</p>
+    </div>
+</section>
 
-<div class="card shadow mb-4">
-    <div class="card-header tecn-blue text-white">
-        <h2 class="h5 mb-0">Registro Manual {{ tip('Registra una persona y genera su credencial con QR.') }}</h2>
+<div class="card mb-4">
+    <div class="card-header">
+        <h2 class="h5 mb-0">Registro manual {{ tip('Registra una persona y genera su credencial con QR.') }}</h2>
     </div>
     <div class="card-body">
         <form id="register-form" method="POST">
@@ -59,14 +65,14 @@
                 </div>
             </div>
             <div id="event-fields-container" class="border-top mt-3 pt-3 d-none"></div>
-            <button type="submit" class="btn tecn-blue text-white mt-3">Registrar usuario</button>
+            <button type="submit" class="btn tecn-blue text-white mt-3">Registrar participante</button>
         </form>
         <div id="qr-result" class="mt-3"></div>
     </div>
 </div>
 
-<div class="card shadow">
-    <div class="card-header tecn-blue text-white">
+<div class="card">
+    <div class="card-header">
         <h2 class="h5 mb-0">Cargar Participantes desde Excel {{ tip('Importa participantes en lote. El archivo debe incluir las columnas base indicadas.') }}</h2>
     </div>
     <div class="card-body">
@@ -108,9 +114,9 @@
 <div class="modal fade" id="registerSuccessModal" tabindex="-1" aria-labelledby="registerSuccessModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header tecn-blue text-white">
+            <div class="modal-header">
                 <h2 class="modal-title h5" id="registerSuccessModalLabel">Usuario registrado</h2>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
                 <p class="mb-2">El usuario fue registrado y su credencial quedó generada.</p>
@@ -118,7 +124,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-primary" id="register-another-btn">Registrar otro</button>
-                <a href="{{ url_for('admin_dashboard') }}" class="btn tecn-blue text-white">Pantalla principal</a>
+                <a href="{{ url_for('acceso.admin_panel') }}" class="btn tecn-blue text-white">Pantalla principal</a>
             </div>
         </div>
     </div>

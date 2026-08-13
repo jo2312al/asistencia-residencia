@@ -2,10 +2,13 @@
 {% from '_help.html' import tip %}
 {% block title %}Evento {{ event[1] }}{% endblock %}
 {% block content %}
-<section class="mb-6">
-    <p class="text-sm font-semibold uppercase tracking-wide text-brand-700">Evento</p>
-    <h1 class="tecn-blue-text !mb-1">{{ event[1] }} {{ tip('Esta vista concentra participantes, proyectos, asistencias, correos y configuracion del evento.') }}</h1>
-    <p class="text-slate-500">{{ event[7] }}{% if event[5] %} / {{ event[5] }}{% endif %}</p>
+<section class="page-hero">
+    <div>
+        <p class="page-eyebrow">Evento</p>
+        <h1 class="page-title">{{ event[1] }} {{ tip('Esta vista concentra participantes, proyectos, asistencias y configuracion del evento.') }}</h1>
+        <p class="page-subtitle">{{ event[7] }}{% if event[5] %} / {{ event[5] }}{% endif %}</p>
+    </div>
+    <div class="page-actions"><a class="btn btn-outline-primary" href="{{ url_for('configuracion.configuracion', event_id=event[0]) }}">Configuracion</a></div>
 </section>
 
 <div class="row g-3 mb-4">
@@ -17,12 +20,12 @@
 
 <div class="row g-4">
     <div class="col-xl-5">
-        <div class="card shadow h-100">
+        <div class="card h-100">
             <div class="card-header">
                 <h2 class="h5 mb-0">Editar evento {{ tip('Corrige datos generales del evento sin recrearlo.') }}</h2>
             </div>
             <div class="card-body">
-                <form method="POST" action="{{ url_for('update_event', event_id=event[0]) }}" class="row g-3">
+                <form method="POST" action="{{ url_for('eventos.actualizar_evento', event_id=event[0]) }}" class="row g-3">
                     <div class="col-md-8">
                         <label for="name" class="form-label">Nombre</label>
                         <input type="text" class="form-control" id="name" name="name" value="{{ event[1] }}" required>
@@ -69,7 +72,7 @@
                     </div>
                     <div class="col-12">
                         <button type="submit" class="btn btn-primary">Guardar evento</button>
-                        <a class="btn btn-outline-primary" href="{{ url_for('settings', event_id=event[0]) }}">Configuracion</a>
+                        <a class="btn btn-outline-primary" href="{{ url_for('configuracion.configuracion', event_id=event[0]) }}">Configuracion</a>
                     </div>
                 </form>
             </div>
@@ -77,7 +80,7 @@
     </div>
 
     <div class="col-xl-7">
-        <div class="card shadow h-100">
+        <div class="card h-100">
             <div class="card-header">
                 <h2 class="h5 mb-0">Participantes {{ tip('Edita datos basicos sin cambiar el historial de credenciales o asistencias.') }}</h2>
             </div>
@@ -107,7 +110,7 @@
                             </tr>
                             <tr class="collapse" id="edit-{{ participant.id }}">
                                 <td colspan="4">
-                                    <form method="POST" action="{{ url_for('update_participant', student_id=participant.id) }}" class="row g-2">
+                                    <form method="POST" action="{{ url_for('participantes.actualizar_participante', student_id=participant.id) }}" class="row g-2">
                                         <div class="col-md-4"><label class="form-label">Nombre</label><input class="form-control" name="first_name" value="{{ participant.first_name }}" required></div>
                                         <div class="col-md-4"><label class="form-label">Apellido P</label><input class="form-control" name="last_name_p" value="{{ participant.last_name_p }}" required></div>
                                         <div class="col-md-4"><label class="form-label">Apellido M</label><input class="form-control" name="last_name_m" value="{{ participant.last_name_m }}" required></div>
@@ -149,33 +152,8 @@
 </div>
 
 <div class="row g-4 mt-1">
-    <div class="col-lg-6">
-        <div class="card shadow h-100">
-            <div class="card-header">
-                <h2 class="h5 mb-0">Historial de correos {{ tip('Muestra los ultimos envios de credenciales y errores del mailer.') }}</h2>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table align-middle">
-                        <thead><tr><th>Fecha</th><th>Destino</th><th>Estado</th></tr></thead>
-                        <tbody>
-                            {% for log in email_logs %}
-                            <tr>
-                                <td>{{ log[5] }}</td>
-                                <td>{{ log[1] }}<br><span class="text-muted small">{{ log[2] }}</span>{% if log[4] %}<br><span class="text-danger small">{{ log[4] }}</span>{% endif %}</td>
-                                <td>{{ log[3] }}</td>
-                            </tr>
-                            {% else %}
-                            <tr><td colspan="3" class="text-center text-muted">Sin correos registrados.</td></tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-6">
-        <div class="card shadow h-100">
+    <div class="col-lg-12">
+        <div class="card h-100">
             <div class="card-header">
                 <h2 class="h5 mb-0">Asistencias recientes {{ tip('Ultimos escaneos registrados para este evento.') }}</h2>
             </div>

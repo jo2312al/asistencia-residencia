@@ -1,4 +1,4 @@
-import mysql.connector
+﻿import mysql.connector
 from mysql.connector import Error
 import pandas as pd
 import uuid
@@ -17,16 +17,32 @@ from reportlab.lib.units import inch
 import xlsxwriter
 from werkzeug.security import generate_password_hash
 
-class DatabaseManager:
+from infraestructura.repositorios.estudiantes import RepositorioEstudiantesMixin
+from infraestructura.repositorios.eventos import RepositorioEventosMixin
+from infraestructura.repositorios.participantes import RepositorioParticipantesMixin
+from infraestructura.repositorios.reportes_asistencia import RepositorioReportesAsistenciaMixin
+from infraestructura.repositorios.reportes_ejecutivos import RepositorioReportesEjecutivosMixin
+from infraestructura.repositorios.usuarios import RepositorioUsuariosMixin
+
+class GestorBaseDatos(
+    RepositorioUsuariosMixin,
+    RepositorioParticipantesMixin,
+    RepositorioEventosMixin,
+    RepositorioReportesEjecutivosMixin,
+    RepositorioReportesAsistenciaMixin,
+    RepositorioEstudiantesMixin,
+):
     VALID_ROLES = {'adminsuperior', 'admin', 'staff', 'guest'}
     BASE_REGISTRATION_FIELD_NAMES = {'nombre', 'apellido paterno', 'apellido materno', 'matricula', 'carrera'}
 
     def __init__(self, db_config):
+        """Realiza internamente la operaciÃ³n init."""
         self.db_config = db_config
-        self.pool = self._create_pool()
-        self.init_db()
+        self.pool = self._crear_grupo_conexiones()
+        self.inicializar_bd()
 
-    def _create_pool(self):
+    def _crear_grupo_conexiones(self):
+        """Realiza internamente la operaciÃ³n crear grupo conexiones."""
         pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
         return mysql.connector.pooling.MySQLConnectionPool(
             pool_name=f"asistec_{os.getpid()}",
@@ -34,22 +50,38 @@ class DatabaseManager:
             **self.db_config
         )
 
-    def connect(self):
+    def conectar(self):
+        """Ejecuta la operaciÃ³n conectar y devuelve el resultado correspondiente."""
         return self.pool.get_connection()
 
-    def init_db(self):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS users (
+    def inicializar_bd(self):
+        """Ejecuta la operaciÃ³n inicializar bd y devuelve el resultado correspondiente."""
+        conexion = self.conectar()
+        try:
+            cursor = conexion.cursor()
+            self._crear_tablas_base(cursor)
+            self._crear_tablas_campos(cursor)
+            self._crear_tablas_operacion(cursor)
+            self._migrar_esquema(cursor)
+            conexion.commit()
+        finally:
+            try:
+                conexion.close()
+            except Error:
+                pass
+
+    def _crear_tablas_base(self, cursor):
+        """Realiza internamente la operaciÃ³n crear tablas base."""
+        cursor.execute('''CREATE TABLE IF NOT EXISTS users (
             username VARCHAR(50) PRIMARY KEY,
             password_hash VARCHAR(255) NOT NULL,
             role VARCHAR(20) NOT NULL DEFAULT 'guest')''')
-        c.execute('''CREATE TABLE IF NOT EXISTS projects (
+        cursor.execute('''CREATE TABLE IF NOT EXISTS projects (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(100) NOT NULL,
             description TEXT,
             event_id INT NULL)''')
-        c.execute('''CREATE TABLE IF NOT EXISTS events (
+        cursor.execute('''CREATE TABLE IF NOT EXISTS events (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(150) NOT NULL,
             description TEXT,
@@ -60,7 +92,7 @@ class DatabaseManager:
             event_type VARCHAR(50) NOT NULL DEFAULT 'general',
             duplicate_policy VARCHAR(50) NOT NULL DEFAULT 'once_per_day',
             created_at DATETIME NULL)''')
-        c.execute('''CREATE TABLE IF NOT EXISTS students (
+        cursor.execute('''CREATE TABLE IF NOT EXISTS students (
             id VARCHAR(36) PRIMARY KEY,
             first_name VARCHAR(50) NOT NULL,
             last_name_p VARCHAR(50) NOT NULL,
@@ -71,12 +103,15 @@ class DatabaseManager:
             project_id INT,
             FOREIGN KEY (event_id) REFERENCES events(id),
             FOREIGN KEY (project_id) REFERENCES projects(id))''')
-        c.execute('''CREATE TABLE IF NOT EXISTS attendance (
+        cursor.execute('''CREATE TABLE IF NOT EXISTS attendance (
             id INT AUTO_INCREMENT PRIMARY KEY,
             student_id VARCHAR(36),
             timestamp DATETIME,
             FOREIGN KEY (student_id) REFERENCES students(id))''')
-        c.execute('''CREATE TABLE IF NOT EXISTS project_fields (
+
+    def _crear_tablas_campos(self, cursor):
+        """Realiza internamente la operaciÃ³n crear tablas campos."""
+        cursor.execute('''CREATE TABLE IF NOT EXISTS project_fields (
             id INT AUTO_INCREMENT PRIMARY KEY,
             project_id INT NOT NULL,
             name VARCHAR(100) NOT NULL,
@@ -85,7 +120,7 @@ class DatabaseManager:
             display_order INT NOT NULL DEFAULT 0,
             created_at DATETIME NULL,
             FOREIGN KEY (project_id) REFERENCES projects(id))''')
-        c.execute('''CREATE TABLE IF NOT EXISTS event_fields (
+        cursor.execute('''CREATE TABLE IF NOT EXISTS event_fields (
             id INT AUTO_INCREMENT PRIMARY KEY,
             event_id INT NOT NULL,
             name VARCHAR(100) NOT NULL,
@@ -94,7 +129,7 @@ class DatabaseManager:
             display_order INT NOT NULL DEFAULT 0,
             created_at DATETIME NULL,
             FOREIGN KEY (event_id) REFERENCES events(id))''')
-        c.execute('''CREATE TABLE IF NOT EXISTS participants (
+        cursor.execute('''CREATE TABLE IF NOT EXISTS participants (
             id VARCHAR(36) PRIMARY KEY,
             full_name VARCHAR(150) NOT NULL,
             email VARCHAR(255),
@@ -109,7 +144,7 @@ class DatabaseManager:
             FOREIGN KEY (event_id) REFERENCES events(id),
             FOREIGN KEY (project_id) REFERENCES projects(id),
             FOREIGN KEY (legacy_student_id) REFERENCES students(id))''')
-        c.execute('''CREATE TABLE IF NOT EXISTS participant_field_values (
+        cursor.execute('''CREATE TABLE IF NOT EXISTS participant_field_values (
             id INT AUTO_INCREMENT PRIMARY KEY,
             participant_id VARCHAR(36) NOT NULL,
             field_id INT NOT NULL,
@@ -118,7 +153,7 @@ class DatabaseManager:
             updated_at DATETIME NULL,
             FOREIGN KEY (participant_id) REFERENCES participants(id),
             FOREIGN KEY (field_id) REFERENCES project_fields(id))''')
-        c.execute('''CREATE TABLE IF NOT EXISTS participant_event_field_values (
+        cursor.execute('''CREATE TABLE IF NOT EXISTS participant_event_field_values (
             id INT AUTO_INCREMENT PRIMARY KEY,
             participant_id VARCHAR(36) NOT NULL,
             field_id INT NOT NULL,
@@ -127,7 +162,10 @@ class DatabaseManager:
             updated_at DATETIME NULL,
             FOREIGN KEY (participant_id) REFERENCES participants(id),
             FOREIGN KEY (field_id) REFERENCES event_fields(id))''')
-        c.execute('''CREATE TABLE IF NOT EXISTS credentials (
+
+    def _crear_tablas_operacion(self, cursor):
+        """Realiza internamente la operaciÃ³n crear tablas operacion."""
+        cursor.execute('''CREATE TABLE IF NOT EXISTS credentials (
             id VARCHAR(36) PRIMARY KEY,
             participant_id VARCHAR(36) NOT NULL,
             token VARCHAR(80) UNIQUE NOT NULL,
@@ -138,7 +176,7 @@ class DatabaseManager:
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             FOREIGN KEY (participant_id) REFERENCES participants(id))''')
-        c.execute('''CREATE TABLE IF NOT EXISTS email_logs (
+        cursor.execute('''CREATE TABLE IF NOT EXISTS email_logs (
             id INT AUTO_INCREMENT PRIMARY KEY,
             event_id INT NULL,
             recipient VARCHAR(255) NOT NULL,
@@ -147,7 +185,7 @@ class DatabaseManager:
             error TEXT,
             created_at DATETIME NOT NULL,
             FOREIGN KEY (event_id) REFERENCES events(id))''')
-        c.execute('''CREATE TABLE IF NOT EXISTS attendance_events (
+        cursor.execute('''CREATE TABLE IF NOT EXISTS attendance_events (
             id INT AUTO_INCREMENT PRIMARY KEY,
             participant_id VARCHAR(36),
             credential_id VARCHAR(36),
@@ -159,7 +197,7 @@ class DatabaseManager:
             FOREIGN KEY (credential_id) REFERENCES credentials(id),
             FOREIGN KEY (legacy_attendance_id) REFERENCES attendance(id),
             FOREIGN KEY (event_id) REFERENCES events(id))''')
-        c.execute('''CREATE TABLE IF NOT EXISTS event_templates (
+        cursor.execute('''CREATE TABLE IF NOT EXISTS event_templates (
             event_id INT PRIMARY KEY,
             email_subject VARCHAR(255),
             email_body TEXT,
@@ -167,64 +205,68 @@ class DatabaseManager:
             logo_filename VARCHAR(255),
             updated_at DATETIME NOT NULL,
             FOREIGN KEY (event_id) REFERENCES events(id))''')
-        c.execute('''CREATE TABLE IF NOT EXISTS user_event_permissions (
+        cursor.execute('''CREATE TABLE IF NOT EXISTS user_event_permissions (
             username VARCHAR(50) NOT NULL,
             event_id INT NOT NULL,
             created_at DATETIME NOT NULL,
             PRIMARY KEY (username, event_id),
             FOREIGN KEY (username) REFERENCES users(username),
             FOREIGN KEY (event_id) REFERENCES events(id))''')
-        c.execute("""
+
+    def _migrar_esquema(self, cursor):
+        """Realiza internamente la operaciÃ³n migrar esquema."""
+        cursor.execute("""
             SELECT COUNT(*)
             FROM information_schema.COLUMNS
             WHERE TABLE_SCHEMA = %s
             AND TABLE_NAME = 'users'
             AND COLUMN_NAME = 'role'
         """, (self.db_config['database'],))
-        has_role_column = c.fetchone()[0] > 0
+        has_role_column = cursor.fetchone()[0] > 0
         if not has_role_column:
-            c.execute("ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'guest'")
-        self._ensure_column(c, 'events', 'description', 'TEXT')
-        self._ensure_column(c, 'events', 'start_datetime', 'DATETIME NULL')
-        self._ensure_column(c, 'events', 'end_datetime', 'DATETIME NULL')
-        self._ensure_column(c, 'events', 'location', 'VARCHAR(255)')
-        self._ensure_column(c, 'events', 'status', "VARCHAR(30) NOT NULL DEFAULT 'active'")
-        self._ensure_column(c, 'events', 'event_type', "VARCHAR(50) NOT NULL DEFAULT 'general'")
-        self._ensure_column(c, 'events', 'duplicate_policy', "VARCHAR(50) NOT NULL DEFAULT 'once_per_day'")
-        self._ensure_column(c, 'events', 'created_at', 'DATETIME NULL')
-        self._ensure_column(c, 'projects', 'event_id', 'INT NULL')
-        self._ensure_project_event_unique_index(c)
-        self._ensure_column(c, 'students', 'event_id', 'INT NULL')
-        self._ensure_column(c, 'participants', 'event_id', 'INT NULL')
-        self._ensure_column(c, 'participants', 'legacy_student_id', 'VARCHAR(36)')
-        self._ensure_column(c, 'participants', 'participant_type', "VARCHAR(30) NOT NULL DEFAULT 'alumno'")
-        self._ensure_column(c, 'project_fields', 'field_type', "VARCHAR(50) NOT NULL DEFAULT 'text'")
-        self._ensure_column(c, 'project_fields', 'display_order', 'INT NOT NULL DEFAULT 0')
-        self._ensure_column(c, 'project_fields', 'created_at', 'DATETIME NULL')
-        self._ensure_column(c, 'participant_field_values', 'created_at', 'DATETIME NULL')
-        self._ensure_column(c, 'participant_field_values', 'updated_at', 'DATETIME NULL')
-        self._ensure_column(c, 'participant_event_field_values', 'created_at', 'DATETIME NULL')
-        self._ensure_column(c, 'participant_event_field_values', 'updated_at', 'DATETIME NULL')
-        self._ensure_column(c, 'participants', 'created_at', 'DATETIME NULL')
-        self._ensure_column(c, 'participants', 'updated_at', 'DATETIME NULL')
-        self._ensure_column(c, 'credentials', 'qr_path', 'VARCHAR(255)')
-        self._ensure_column(c, 'credentials', 'digital_url', 'VARCHAR(500)')
-        self._ensure_column(c, 'credentials', 'sent_status', "VARCHAR(30) NOT NULL DEFAULT 'pending'")
-        self._ensure_column(c, 'credentials', 'created_at', 'DATETIME NULL')
-        self._ensure_column(c, 'credentials', 'updated_at', 'DATETIME NULL')
-        self._ensure_column(c, 'attendance_events', 'credential_id', 'VARCHAR(36)')
-        self._ensure_column(c, 'attendance_events', 'legacy_attendance_id', 'INT')
-        self._ensure_column(c, 'attendance_events', 'event_id', 'INT NULL')
-        self._ensure_performance_indexes(c)
-        conn.commit()
-        conn.close()
+            cursor.execute("ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'guest'")
+        self._asegurar_columna(cursor, 'events', 'description', 'TEXT')
+        self._asegurar_columna(cursor, 'events', 'start_datetime', 'DATETIME NULL')
+        self._asegurar_columna(cursor, 'events', 'end_datetime', 'DATETIME NULL')
+        self._asegurar_columna(cursor, 'events', 'location', 'VARCHAR(255)')
+        self._asegurar_columna(cursor, 'events', 'status', "VARCHAR(30) NOT NULL DEFAULT 'active'")
+        self._asegurar_columna(cursor, 'events', 'event_type', "VARCHAR(50) NOT NULL DEFAULT 'general'")
+        self._asegurar_columna(cursor, 'events', 'duplicate_policy', "VARCHAR(50) NOT NULL DEFAULT 'once_per_day'")
+        self._asegurar_columna(cursor, 'events', 'created_at', 'DATETIME NULL')
+        self._asegurar_columna(cursor, 'projects', 'event_id', 'INT NULL')
+        self._asegurar_proyecto_evento_unico_indice(cursor)
+        self._asegurar_columna(cursor, 'students', 'event_id', 'INT NULL')
+        self._asegurar_columna(cursor, 'participants', 'event_id', 'INT NULL')
+        self._asegurar_columna(cursor, 'participants', 'legacy_student_id', 'VARCHAR(36)')
+        self._asegurar_columna(cursor, 'participants', 'participant_type', "VARCHAR(30) NOT NULL DEFAULT 'alumno'")
+        self._asegurar_columna(cursor, 'project_fields', 'field_type', "VARCHAR(50) NOT NULL DEFAULT 'text'")
+        self._asegurar_columna(cursor, 'project_fields', 'display_order', 'INT NOT NULL DEFAULT 0')
+        self._asegurar_columna(cursor, 'project_fields', 'created_at', 'DATETIME NULL')
+        self._asegurar_columna(cursor, 'participant_field_values', 'created_at', 'DATETIME NULL')
+        self._asegurar_columna(cursor, 'participant_field_values', 'updated_at', 'DATETIME NULL')
+        self._asegurar_columna(cursor, 'participant_event_field_values', 'created_at', 'DATETIME NULL')
+        self._asegurar_columna(cursor, 'participant_event_field_values', 'updated_at', 'DATETIME NULL')
+        self._asegurar_columna(cursor, 'participants', 'created_at', 'DATETIME NULL')
+        self._asegurar_columna(cursor, 'participants', 'updated_at', 'DATETIME NULL')
+        self._asegurar_columna(cursor, 'credentials', 'qr_path', 'VARCHAR(255)')
+        self._asegurar_columna(cursor, 'credentials', 'digital_url', 'VARCHAR(500)')
+        self._asegurar_columna(cursor, 'credentials', 'sent_status', "VARCHAR(30) NOT NULL DEFAULT 'pending'")
+        self._asegurar_columna(cursor, 'credentials', 'created_at', 'DATETIME NULL')
+        self._asegurar_columna(cursor, 'credentials', 'updated_at', 'DATETIME NULL')
+        self._asegurar_columna(cursor, 'attendance_events', 'credential_id', 'VARCHAR(36)')
+        self._asegurar_columna(cursor, 'attendance_events', 'legacy_attendance_id', 'INT')
+        self._asegurar_columna(cursor, 'attendance_events', 'event_id', 'INT NULL')
+        self._asegurar_rendimiento_indices(cursor)
 
-    def _ensure_column(self, cursor, table_name, column_name, definition):
-        if self._column_exists(cursor, table_name, column_name):
+
+    def _asegurar_columna(self, cursor, table_name, column_name, definition):
+        """Realiza internamente la operaciÃ³n asegurar columna."""
+        if self._columna_exists(cursor, table_name, column_name):
             return
         cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
 
-    def _ensure_project_event_unique_index(self, cursor):
+    def _asegurar_proyecto_evento_unico_indice(self, cursor):
+        """Realiza internamente la operaciÃ³n asegurar proyecto evento unico indice."""
         cursor.execute("""
             SELECT INDEX_NAME
             FROM INFORMATION_SCHEMA.STATISTICS
@@ -248,7 +290,8 @@ class DatabaseManager:
         if not cursor.fetchone()[0]:
             cursor.execute("CREATE UNIQUE INDEX uq_projects_name_event ON projects (name, event_id)")
 
-    def _ensure_performance_indexes(self, cursor):
+    def _asegurar_rendimiento_indices(self, cursor):
+        """Realiza internamente la operaciÃ³n asegurar rendimiento indices."""
         indexes = [
             ('students', 'idx_students_event_project', 'event_id, project_id'),
             ('students', 'idx_students_event_matricula', 'event_id, matricula'),
@@ -263,10 +306,11 @@ class DatabaseManager:
             ('projects', 'idx_projects_event_name_fast', 'event_id, name'),
         ]
         for table_name, index_name, columns in indexes:
-            self._ensure_index(cursor, table_name, index_name, columns)
+            self._asegurar_indice(cursor, table_name, index_name, columns)
 
-    def _ensure_index(self, cursor, table_name, index_name, columns):
-        if self._index_exists(cursor, table_name, index_name):
+    def _asegurar_indice(self, cursor, table_name, index_name, columns):
+        """Realiza internamente la operaciÃ³n asegurar indice."""
+        if self._indice_exists(cursor, table_name, index_name):
             return
         try:
             cursor.execute(f"CREATE INDEX {index_name} ON {table_name} ({columns})")
@@ -274,7 +318,8 @@ class DatabaseManager:
             if getattr(error, "errno", None) != 1061:
                 raise
 
-    def _index_exists(self, cursor, table_name, index_name):
+    def _indice_exists(self, cursor, table_name, index_name):
+        """Realiza internamente la operaciÃ³n index exists."""
         cursor.execute("""
             SELECT COUNT(*)
             FROM INFORMATION_SCHEMA.STATISTICS
@@ -284,7 +329,8 @@ class DatabaseManager:
         """, (self.db_config['database'], table_name, index_name))
         return cursor.fetchone()[0] > 0
 
-    def _column_exists(self, cursor, table_name, column_name):
+    def _columna_exists(self, cursor, table_name, column_name):
+        """Realiza internamente la operaciÃ³n column exists."""
         cursor.execute("""
             SELECT COUNT(*)
             FROM information_schema.COLUMNS
@@ -294,7 +340,8 @@ class DatabaseManager:
         """, (self.db_config['database'], table_name, column_name))
         return cursor.fetchone()[0] > 0
 
-    def _get_column_data_type(self, cursor, table_name, column_name):
+    def _obtener_columna_datos_tipo(self, cursor, table_name, column_name):
+        """Realiza internamente la operaciÃ³n obtener columna datos tipo."""
         cursor.execute("""
             SELECT DATA_TYPE
             FROM information_schema.COLUMNS
@@ -305,1984 +352,20 @@ class DatabaseManager:
         row = cursor.fetchone()
         return row[0] if row else None
 
-    def normalize_role(self, role):
-        role_value = (role or 'guest').strip().lower()
-        if role_value not in self.VALID_ROLES:
-            raise ValueError("Rol invalido. Roles permitidos: adminsuperior, admin, staff, guest")
-        return role_value
 
-    def get_user(self, username):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute("SELECT username, password_hash, role FROM users WHERE username = %s", (username,))
-        user = c.fetchone()
-        conn.close()
-        return user
-
-    def add_user(self, username, password_hash, role='guest'):
-        role_value = self.normalize_role(role)
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
-            (username, password_hash, role_value)
-        )
-        conn.commit()
-        conn.close()
-
-    def get_all_users(self):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute("SELECT username, role FROM users ORDER BY username")
-        users = c.fetchall()
-        conn.close()
-        return users
-
-    def _normalize_field_name(self, value):
-        text = unicodedata.normalize("NFD", value or "")
-        return "".join(char for char in text if unicodedata.category(char) != "Mn").strip().lower()
-
-    def _normalize_excel_header(self, value):
-        text = unicodedata.normalize("NFD", str(value or ""))
-        text = "".join(char for char in text if unicodedata.category(char) != "Mn").lower()
-        text = "".join(char if char.isalnum() else " " for char in text)
-        return " ".join(text.split())
-
-    def _find_excel_column(self, df, aliases):
-        normalized = {self._normalize_excel_header(column): column for column in df.columns}
-        for alias in aliases:
-            column = normalized.get(self._normalize_excel_header(alias))
-            if column is not None:
-                return column
-        return None
-
-    def _row_value_for_field(self, row, field_name):
-        if field_name in row.index:
-            return row[field_name]
-
-        normalized_field = self._normalize_field_name(field_name)
-        aliases = {
-            "correo": ("email", "e-mail", "correo electronico", "correo"),
-            "email": ("email", "e-mail", "correo electronico", "correo"),
-        }
-        for alias in aliases.get(normalized_field, ()):
-            for column in row.index:
-                if self._normalize_field_name(column) == alias:
-                    return row[column]
-        return ""
-
-    def _read_excel_table(self, file):
-        if hasattr(file, "seek"):
-            file.seek(0)
-        df = pd.read_excel(file)
-        if self._looks_like_event_excel(df):
-            return df
-
-        if hasattr(file, "seek"):
-            file.seek(0)
-        raw_df = pd.read_excel(file, header=None)
-        header_row_index = self._find_event_excel_header_row(raw_df)
-        if header_row_index is None:
-            return df
-
-        headers = [
-            self._cell_text(value) or f"Unnamed: {index}"
-            for index, value in enumerate(raw_df.iloc[header_row_index].tolist())
-        ]
-        table_df = raw_df.iloc[header_row_index + 1:].copy()
-        table_df.columns = headers
-        table_df = table_df.dropna(how="all").reset_index(drop=True)
-        return table_df
-
-    def _find_event_excel_header_row(self, raw_df):
-        for index, row in raw_df.head(30).iterrows():
-            normalized_values = {self._normalize_excel_header(value) for value in row.tolist() if self._cell_text(value)}
-            has_project = "proyecto" in normalized_values
-            has_name = any(value in normalized_values for value in ("nombre autores asesores", "nombre autores", "autores", "asesores"))
-            has_control = any(
-                value in normalized_values
-                for value in (
-                    "num control departamento",
-                    "numero control departamento",
-                    "num control",
-                    "no control",
-                    "departamento",
-                )
-            )
-            if has_project and has_name and has_control:
-                return index
-        return None
-
-    def _cell_text(self, value):
-        if pd.isna(value):
-            return ""
-        return str(value).strip()
-
-    def _split_cell_items(self, value, split_commas=False):
-        text = self._cell_text(value)
-        if not text:
-            return []
-        pattern = r"[\n;|]+"
-        if split_commas:
-            pattern = r"[\n;|,]+"
-        return [item.strip() for item in re.split(pattern, text) if item.strip()]
-
-    def _split_full_name(self, full_name):
-        parts = self._cell_text(full_name).split()
-        if not parts:
-            return "", "", ""
-        if len(parts) == 1:
-            return parts[0], "", ""
-        if len(parts) == 2:
-            return parts[0], parts[1], ""
-        return " ".join(parts[:-2]), parts[-2], parts[-1]
-
-    def _is_placeholder_participant_name(self, value):
-        normalized = self._normalize_excel_header(value)
-        return normalized in {
-            "autor",
-            "autores",
-            "asesor",
-            "asesores",
-            "nombre autores asesores",
-        }
-
-    def _advisor_matricula(self, name, email, project, folio):
-        source = "|".join([
-            self._normalize_excel_header(name),
-            self._normalize_excel_header(email),
-            self._normalize_excel_header(project),
-            self._normalize_excel_header(folio),
-        ])
-        digest = hashlib.sha1(source.encode("utf-8")).hexdigest()[:12].upper()
-        return f"ASE-{digest}"
-
-    def _looks_like_event_excel(self, df):
-        return (
-            self._find_excel_column(df, ["Proyecto"]) is not None
-            and self._find_excel_column(df, ["Nombre Autores/Asesores", "Nombre Autores", "Autores", "Asesores"]) is not None
-            and self._find_excel_column(df, ["Num. Control/Departamento", "Numero Control Departamento", "Num Control", "Departamento"]) is not None
-        )
-
-    def _convert_event_excel(self, df):
-        project_col = self._find_excel_column(df, ["Proyecto"])
-        folio_col = self._find_excel_column(df, ["Folio"])
-        event_col = self._find_excel_column(df, ["Evento"])
-        category_col = self._find_excel_column(df, ["Categoria", "Categoría"])
-        level_col = self._find_excel_column(df, ["Nivel"])
-        semester_col = self._find_excel_column(df, ["Semestre"])
-        career_col = self._find_excel_column(df, ["Carrera"])
-        name_col = self._find_excel_column(df, ["Nombre Autores/Asesores", "Nombre Autores", "Nombre Asesores", "Autores", "Asesores"])
-        email_col = self._find_excel_column(df, ["E-mail Autores/Asesores", "Email Autores/Asesores", "Correo Autores/Asesores", "E-mail", "Email"])
-        control_col = self._find_excel_column(df, ["Num. Control/Departamento", "Numero Control Departamento", "Num Control", "No Control", "Departamento"])
-
-        rows = []
-        current = {
-            "project": "",
-            "folio": "",
-            "event": "",
-            "category": "",
-            "level": "",
-            "semester": "",
-            "career": "",
-            "description": "",
-        }
-
-        for _, row in df.dropna(how="all").iterrows():
-            project_value = self._cell_text(row[project_col]) if project_col else ""
-            folio_value = self._cell_text(row[folio_col]) if folio_col else ""
-            is_project_header = bool(project_value and re.match(r"^\d+-\d+$", folio_value))
-            if project_value and not is_project_header and not self._is_placeholder_participant_name(project_value):
-                current["description"] = project_value
-
-            values = {
-                "project": project_value if is_project_header else "",
-                "folio": self._cell_text(row[folio_col]) if folio_col else "",
-                "event": self._cell_text(row[event_col]) if event_col else "",
-                "category": self._cell_text(row[category_col]) if category_col else "",
-                "level": self._cell_text(row[level_col]) if level_col else "",
-                "semester": self._cell_text(row[semester_col]) if semester_col else "",
-                "career": self._cell_text(row[career_col]) if career_col else "",
-            }
-            for key, value in values.items():
-                if value:
-                    current[key] = value
-
-            names = self._split_cell_items(row[name_col]) if name_col else []
-            emails = self._split_cell_items(row[email_col], split_commas=True) if email_col else []
-            controls = self._split_cell_items(row[control_col], split_commas=True) if control_col else []
-
-            for index, name in enumerate(names):
-                if self._is_placeholder_participant_name(name):
-                    continue
-
-                email = emails[index] if index < len(emails) else (emails[0] if len(emails) == 1 else "")
-                control = controls[index] if index < len(controls) else (controls[0] if len(controls) == 1 else "")
-                combined = self._normalize_excel_header(f"{name} {email} {control}")
-                is_advisor = "asesor" in combined or (control and any(char.isalpha() for char in control) and not any(char.isdigit() for char in control))
-                participant_type = "asesor" if is_advisor else "alumno"
-                first_name, last_name_p, last_name_m = self._split_full_name(name)
-                matricula = control
-                if participant_type == "asesor":
-                    matricula = self._advisor_matricula(name, email, current["project"], current["folio"])
-                if not matricula:
-                    prefix = "ASESOR" if participant_type == "asesor" else "SINCONTROL"
-                    matricula = f"{prefix}-{uuid.uuid4().hex[:8]}"
-
-                rows.append({
-                    "first_name": first_name,
-                    "last_name_p": last_name_p,
-                    "last_name_m": last_name_m,
-                    "matricula": matricula,
-                    "carrera": current["career"] or current["level"] or "Sin carrera",
-                    "project_name": current["project"],
-                    "email": email,
-                    "Correo": email,
-                    "Email": email,
-                    "participant_type": participant_type,
-                    "Folio": current["folio"],
-                    "Evento": current["event"],
-                    "Categoria": current["category"],
-                    "Nivel": current["level"],
-                    "Semestre": current["semester"],
-                    "Descripcion": current["description"],
-                    "Departamento": control if participant_type == "asesor" else "",
-                })
-
-        if not rows:
-            raise ValueError("No se encontraron autores o asesores para importar en el Excel")
-        return pd.DataFrame(rows)
-
-    def prepare_excel_import_dataframe(self, file):
-        df = self._read_excel_table(file)
-        required_columns = ['first_name', 'last_name_p', 'last_name_m', 'matricula', 'carrera']
-        if all(col in df.columns for col in required_columns):
-            return df, "standard"
-        if self._looks_like_event_excel(df):
-            return self._convert_event_excel(df), "event_format"
-        return df, "unknown"
-
-    def update_user_role(self, username, role):
-        role_value = self.normalize_role(role)
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute("UPDATE users SET role = %s WHERE username = %s", (role_value, username))
-        conn.commit()
-        updated = c.rowcount
-        conn.close()
-        return updated > 0
-
-    def ensure_user(self, username, password_hash, role='guest'):
-        role_value = self.normalize_role(role)
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute("SELECT username FROM users WHERE username = %s", (username,))
-        exists = c.fetchone() is not None
-        if not exists:
-            c.execute(
-                "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
-                (username, password_hash, role_value)
-            )
-            conn.commit()
-        conn.close()
-        return not exists
-
-    def add_student(self, student_id, first_name, last_name_p, last_name_m, matricula, carrera, project_id, event_id=None, email=None, participant_type='alumno'):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute('''INSERT INTO students (id, first_name, last_name_p, last_name_m, matricula, carrera, event_id, project_id)
-                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)''',
-                  (student_id, first_name, last_name_p, last_name_m, matricula, carrera, event_id, project_id))
-        try:
-            participant_id = self._ensure_participant_for_student(
-                c, student_id, first_name, last_name_p, last_name_m, project_id, event_id, email, participant_type
-            )
-            self._ensure_credential_for_participant(c, participant_id)
-        except Exception:
-            pass
-        conn.commit()
-        conn.close()
-
-    def _new_credential_token(self):
-        return f"CRD-{secrets.token_hex(4)}"
-
-    def _ensure_participant_for_student(self, cursor, student_id, first_name, last_name_p, last_name_m, project_id, event_id=None, email=None, participant_type='alumno'):
-        cursor.execute("SELECT id FROM participants WHERE legacy_student_id = %s", (student_id,))
-        existing = cursor.fetchone()
-        full_name = f"{first_name} {last_name_p} {last_name_m}".strip()
-        now = datetime.now()
-        if existing:
-            participant_id = existing[0]
-            cursor.execute(
-                """UPDATE participants
-                   SET full_name = %s,
-                       email = COALESCE(%s, email),
-                       participant_type = COALESCE(%s, participant_type),
-                       event_id = %s,
-                       project_id = %s,
-                       updated_at = %s
-                   WHERE id = %s""",
-                (full_name, email or None, participant_type or None, event_id, project_id, now, participant_id)
-            )
-            return participant_id
-
-        participant_id = str(uuid.uuid4())
-        cursor.execute(
-            """INSERT INTO participants
-               (id, full_name, email, participant_type, event_id, project_id, status, legacy_student_id, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, 'active', %s, %s, %s)""",
-            (participant_id, full_name, email, participant_type or 'alumno', event_id, project_id, student_id, now, now)
-        )
-        return participant_id
-
-    def _ensure_credential_for_participant(self, cursor, participant_id):
-        cursor.execute(
-            "SELECT id, token, qr_path, digital_url FROM credentials WHERE participant_id = %s ORDER BY created_at DESC LIMIT 1",
-            (participant_id,)
-        )
-        existing = cursor.fetchone()
-        if existing:
-            return {"id": existing[0], "token": existing[1], "qr_path": existing[2], "digital_url": existing[3]}
-
-        now = datetime.now()
-        for _ in range(5):
-            token = self._new_credential_token()
-            try:
-                credential_id_type = self._get_column_data_type(cursor, 'credentials', 'id')
-                if credential_id_type in ('int', 'bigint', 'mediumint', 'smallint', 'tinyint'):
-                    cursor.execute(
-                        """INSERT INTO credentials
-                           (participant_id, token, status, sent_status, created_at, updated_at)
-                           VALUES (%s, %s, 'active', 'pending', %s, %s)""",
-                        (participant_id, token, now, now)
-                    )
-                    credential_id = cursor.lastrowid
-                else:
-                    credential_id = str(uuid.uuid4())
-                    cursor.execute(
-                        """INSERT INTO credentials
-                           (id, participant_id, token, status, sent_status, created_at, updated_at)
-                           VALUES (%s, %s, %s, 'active', 'pending', %s, %s)""",
-                        (credential_id, participant_id, token, now, now)
-                    )
-                return {"id": credential_id, "token": token, "qr_path": None, "digital_url": None}
-            except mysql.connector.Error as e:
-                if e.errno != 1062:
-                    raise
-        raise ValueError("No se pudo generar un token unico para la credencial")
-
-    def ensure_student_participant_credential(self, student):
-        conn = self.connect()
-        c = conn.cursor()
-        participant_id = self._ensure_participant_for_student(
-            c, student[0], student[1], student[2], student[3], student[6], student[7] if len(student) > 7 else None
-        )
-        credential = self._ensure_credential_for_participant(c, participant_id)
-        conn.commit()
-        conn.close()
-        return credential
-
-    def get_participant_id_by_student_id(self, student_id):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute("SELECT id FROM participants WHERE legacy_student_id = %s", (student_id,))
-        row = c.fetchone()
-        conn.close()
-        return row[0] if row else None
-
-    def save_participant_field_values(self, participant_id, field_values):
-        if not participant_id or not field_values:
-            return
-
-        conn = self.connect()
-        c = conn.cursor()
-        self._save_participant_field_values(c, participant_id, field_values)
-        conn.commit()
-        conn.close()
-
-    def _save_participant_field_values(self, cursor, participant_id, field_values):
-        now = datetime.now()
-        for field_id, value in field_values.items():
-            cursor.execute(
-                """SELECT id FROM participant_field_values
-                   WHERE participant_id = %s AND field_id = %s""",
-                (participant_id, field_id)
-            )
-            existing = cursor.fetchone()
-            if existing:
-                cursor.execute(
-                    """UPDATE participant_field_values
-                       SET value = %s, updated_at = %s
-                       WHERE id = %s""",
-                    (value, now, existing[0])
-                )
-            else:
-                cursor.execute(
-                    """INSERT INTO participant_field_values
-                       (participant_id, field_id, value, created_at, updated_at)
-                       VALUES (%s, %s, %s, %s, %s)""",
-                    (participant_id, field_id, value, now, now)
-                )
-
-    def get_field_values_by_student_ids(self, student_ids):
-        if not student_ids:
-            return {}
-
-        placeholders = ",".join(["%s"] * len(student_ids))
-        conn = self.connect()
-        try:
-            c = conn.cursor()
-            c.execute(self._field_values_query(placeholders), tuple(student_ids) * 2)
-            return self._group_field_values(c.fetchall())
-        finally:
-            conn.close()
-
-    def _field_values_query(self, placeholders):
-        return f"""
-            SELECT p.legacy_student_id, pf.name, pfv.value, pf.display_order, pf.id
-            FROM participant_field_values pfv
-            JOIN project_fields pf ON pfv.field_id = pf.id
-            JOIN participants p ON pfv.participant_id = p.id
-            WHERE p.legacy_student_id IN ({placeholders})
-            UNION ALL
-            SELECT p.legacy_student_id, ef.name, pefv.value, ef.display_order, ef.id
-            FROM participant_event_field_values pefv
-            JOIN event_fields ef ON pefv.field_id = ef.id
-            JOIN participants p ON pefv.participant_id = p.id
-            WHERE p.legacy_student_id IN ({placeholders})
-            ORDER BY 4, 5
-        """
-
-    def _group_field_values(self, rows):
-        values = {}
-        for student_id, name, value, _, _ in rows:
-            values.setdefault(student_id, []).append({"name": name, "value": value})
-        return values
-
-    def update_credential_qr_path(self, token, qr_path):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            "UPDATE credentials SET qr_path = %s, updated_at = %s WHERE token = %s",
-            (qr_path, datetime.now(), token)
-        )
-        conn.commit()
-        conn.close()
-
-    def actualizar_url_digital_credencial(self, token, url_digital):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            "UPDATE credentials SET digital_url = %s, updated_at = %s WHERE token = %s",
-            (url_digital, datetime.now(), token)
-        )
-        conn.commit()
-        conn.close()
-
-    def update_credentials_sent_status(self, credential_ids, status):
-        if not credential_ids:
-            return
-        placeholders = ",".join(["%s"] * len(credential_ids))
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            f"UPDATE credentials SET sent_status = %s, updated_at = %s WHERE id IN ({placeholders})",
-            tuple([status, datetime.now()] + credential_ids)
-        )
-        conn.commit()
-        conn.close()
-
-    def log_email(self, event_id, recipient, subject, status, error=None):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """INSERT INTO email_logs (event_id, recipient, subject, status, error, created_at)
-               VALUES (%s, %s, %s, %s, %s, %s)""",
-            (event_id, recipient, subject, status, error, datetime.now())
-        )
-        conn.commit()
-        conn.close()
-
-    def get_event_credential_rows(self, event_id):
-        conn = self.connect()
-        c = conn.cursor(dictionary=True)
-        c.execute(
-            """SELECT p.id AS participant_id, p.full_name, p.email, p.participant_type,
-                      p.project_id, pr.name AS project_name, e.name AS event_name,
-                      s.matricula, c.id AS credential_id, c.token, c.qr_path, c.digital_url
-               FROM participants p
-               JOIN credentials c ON c.participant_id = p.id
-               LEFT JOIN students s ON p.legacy_student_id = s.id
-               LEFT JOIN projects pr ON p.project_id = pr.id
-               LEFT JOIN events e ON p.event_id = e.id
-               WHERE p.event_id = %s AND p.status = 'active' AND c.status = 'active'
-               ORDER BY p.project_id, p.participant_type, p.full_name""",
-            (event_id,)
-        )
-        rows = c.fetchall()
-        conn.close()
-        return rows
-
-    def get_event_email_logs(self, event_id, limit=25):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """SELECT id, recipient, subject, status, error, created_at
-               FROM email_logs
-               WHERE event_id = %s
-               ORDER BY created_at DESC
-               LIMIT %s""",
-            (event_id, int(limit))
-        )
-        logs = c.fetchall()
-        conn.close()
-        return logs
-
-    def get_event_attendance_events(self, event_id, limit=25):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """SELECT ae.id, ae.event_type, ae.timestamp, p.full_name, s.matricula, pr.name
-               FROM attendance_events ae
-               LEFT JOIN participants p ON ae.participant_id = p.id
-               LEFT JOIN students s ON p.legacy_student_id = s.id
-               LEFT JOIN projects pr ON p.project_id = pr.id
-               WHERE ae.event_id = %s
-               ORDER BY ae.timestamp DESC
-               LIMIT %s""",
-            (event_id, int(limit))
-        )
-        rows = c.fetchall()
-        conn.close()
-        return rows
-
-    def get_students_for_credentials(self, event_id=None):
-        conn = self.connect()
-        c = conn.cursor(dictionary=True)
-        query = """
-            SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
-                   s.project_id, s.event_id, COALESCE(p.participant_type, 'alumno') AS participant_type,
-                   pr.name AS project_name, cr.token AS credential_token, cr.qr_path
-            FROM students s
-            LEFT JOIN participants p ON p.legacy_student_id = s.id
-            LEFT JOIN credentials cr ON cr.participant_id = p.id
-            LEFT JOIN projects pr ON s.project_id = pr.id
-            WHERE 1=1
-        """
-        params = []
-        if event_id:
-            query += " AND s.event_id = %s"
-            params.append(event_id)
-        query += " ORDER BY pr.name ASC, s.last_name_p ASC, s.first_name ASC, s.matricula ASC"
-        c.execute(query, params)
-        rows = c.fetchall()
-        conn.close()
-        return rows
-
-    def get_event_counts(self, event_id):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM students WHERE event_id = %s", (event_id,))
-        participants = c.fetchone()[0]
-        c.execute("SELECT COUNT(*) FROM projects WHERE event_id = %s", (event_id,))
-        projects = c.fetchone()[0]
-        c.execute("SELECT COUNT(*) FROM attendance_events WHERE event_id = %s", (event_id,))
-        attendance = c.fetchone()[0]
-        c.execute(
-            """SELECT COUNT(*)
-               FROM credentials c
-               JOIN participants p ON c.participant_id = p.id
-               WHERE p.event_id = %s""",
-            (event_id,)
-        )
-        credentials = c.fetchone()[0]
-        conn.close()
-        return {
-            "participants": participants,
-            "projects": projects,
-            "attendance": attendance,
-            "credentials": credentials,
-        }
-
-    def get_event_template(self, event_id):
-        conn = self.connect()
-        c = conn.cursor(dictionary=True)
-        c.execute(
-            """SELECT event_id, email_subject, email_body, credential_style, logo_filename, updated_at
-               FROM event_templates
-               WHERE event_id = %s""",
-            (event_id,)
-        )
-        template = c.fetchone()
-        conn.close()
-        if template:
-            return template
-        return {
-            "event_id": event_id,
-            "email_subject": "Credenciales para {event_name}",
-            "email_body": (
-                "Hola,\n\nAdjuntamos las credenciales para {event_name}.\n\n"
-                "Participantes:\n{participant_list}\n\n"
-                "Presenten el QR al momento del registro de asistencia.\n"
-            ),
-            "credential_style": "standard",
-            "logo_filename": "asistec.webp",
-            "updated_at": None,
-        }
-
-    def save_event_template(self, event_id, email_subject, email_body, credential_style='standard', logo_filename=None):
-        conn = self.connect()
-        c = conn.cursor()
-        now = datetime.now()
-        c.execute(
-            """INSERT INTO event_templates
-               (event_id, email_subject, email_body, credential_style, logo_filename, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s)
-               ON DUPLICATE KEY UPDATE
-                   email_subject = VALUES(email_subject),
-                   email_body = VALUES(email_body),
-                   credential_style = VALUES(credential_style),
-                   logo_filename = VALUES(logo_filename),
-                   updated_at = VALUES(updated_at)""",
-            (event_id, email_subject, email_body, credential_style or 'standard', logo_filename or None, now)
-        )
-        conn.commit()
-        conn.close()
-
-    def get_user_event_permissions(self, username):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """SELECT event_id
-               FROM user_event_permissions
-               WHERE username = %s""",
-            (username,)
-        )
-        event_ids = [row[0] for row in c.fetchall()]
-        conn.close()
-        return event_ids
-
-    def set_user_event_permissions(self, username, event_ids):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute("DELETE FROM user_event_permissions WHERE username = %s", (username,))
-        now = datetime.now()
-        for event_id in event_ids:
-            c.execute(
-                """INSERT INTO user_event_permissions (username, event_id, created_at)
-                   VALUES (%s, %s, %s)""",
-                (username, event_id, now)
-            )
-        conn.commit()
-        conn.close()
-
-    def get_credential_by_token(self, token):
-        conn = self.connect()
-        c = conn.cursor(dictionary=True)
-        c.execute(
-            """SELECT c.id AS credential_id, c.token, c.status AS credential_status,
-                      p.id AS participant_id, p.full_name, p.project_id, p.status AS participant_status,
-                      p.legacy_student_id
-               FROM credentials c
-               JOIN participants p ON c.participant_id = p.id
-               WHERE c.token = %s""",
-            (token,)
-        )
-        credential = c.fetchone()
-        conn.close()
-        return credential
-
-    def obtener_credencial_digital_por_token(self, token):
-        conn = self.connect()
-        c = conn.cursor(dictionary=True)
-        c.execute(
-            """SELECT c.id AS credential_id, c.token, c.status AS credential_status,
-                      c.qr_path, c.digital_url, c.created_at, c.updated_at,
-                      p.id AS participant_id, p.full_name, p.participant_type,
-                      p.project_id, p.status AS participant_status, p.event_id,
-                      s.id AS student_id, s.first_name, s.last_name_p, s.last_name_m,
-                      s.matricula, s.carrera, pr.name AS project_name, e.name AS event_name,
-                      e.start_datetime, e.end_datetime, e.location
-               FROM credentials c
-               JOIN participants p ON c.participant_id = p.id
-               LEFT JOIN students s ON p.legacy_student_id = s.id
-               LEFT JOIN projects pr ON p.project_id = pr.id
-               LEFT JOIN events e ON p.event_id = e.id
-               WHERE c.token = %s""",
-            (token,)
-        )
-        credencial = c.fetchone()
-        conn.close()
-        return credencial
-
-    def record_attendance_event(self, participant_id, credential_id, legacy_attendance_id, event_type, timestamp, event_id=None):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """INSERT INTO attendance_events
-               (participant_id, credential_id, legacy_attendance_id, event_type, timestamp, event_id)
-               VALUES (%s, %s, %s, %s, %s, %s)""",
-            (participant_id, credential_id, legacy_attendance_id, event_type or 'entrada', timestamp, event_id or None)
-        )
-        conn.commit()
-        conn.close()
-
-    def get_all_projects(self):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """SELECT p.id, p.name, p.description, e.name
-               FROM projects p
-               LEFT JOIN events e ON p.event_id = e.id"""
-        )
-        projects = c.fetchall()
-        conn.close()
-        return projects
-
-    def get_projects_by_event(self, event_id):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """SELECT id, name, description, event_id
-               FROM projects
-               WHERE event_id = %s
-               ORDER BY name""",
-            (event_id,)
-        )
-        projects = c.fetchall()
-        conn.close()
-        return projects
-
-    def get_project(self, project_id):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """SELECT p.id, p.name, p.description, e.name, p.event_id
-               FROM projects p
-               LEFT JOIN events e ON p.event_id = e.id
-               WHERE p.id = %s""",
-            (project_id,)
-        )
-        project = c.fetchone()
-        conn.close()
-        return project
-
-    def add_project(self, name, description=None, event_id=None):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            "INSERT INTO projects (name, description, event_id) VALUES (%s, %s, %s)",
-            (name, description, event_id or None)
-        )
-        conn.commit()
-        project_id = c.lastrowid
-        conn.close()
-        return project_id
-
-    def _get_or_create_project_by_name_with_cursor(self, cursor, name, event_id):
-        project_name = (name or "").strip()
-        if not project_name:
-            return None
-
-        cursor.execute(
-            "SELECT id FROM projects WHERE name = %s AND (event_id = %s OR event_id IS NULL) ORDER BY event_id IS NULL LIMIT 1",
-            (project_name, event_id)
-        )
-        existing = cursor.fetchone()
-        if existing:
-            project_id = existing[0]
-            cursor.execute("UPDATE projects SET event_id = %s WHERE id = %s AND event_id IS NULL", (event_id, project_id))
-            return project_id
-
-        try:
-            cursor.execute(
-                "INSERT INTO projects (name, description, event_id) VALUES (%s, %s, %s)",
-                (project_name, None, event_id)
-            )
-            return cursor.lastrowid
-        except mysql.connector.Error as e:
-            if e.errno != 1062:
-                raise
-            cursor.execute("SELECT id FROM projects WHERE name = %s LIMIT 1", (project_name,))
-            row = cursor.fetchone()
-            project_id = row[0] if row else None
-            if project_id:
-                cursor.execute("UPDATE projects SET event_id = %s WHERE id = %s AND event_id IS NULL", (event_id, project_id))
-            return project_id
-
-    def get_or_create_project_by_name(self, name, event_id):
-        project_name = (name or "").strip()
-        if not project_name:
-            return None
-
-        conn = self.connect()
-        c = conn.cursor()
-        project_id = self._get_or_create_project_by_name_with_cursor(c, project_name, event_id)
-        conn.commit()
-        conn.close()
-        return project_id
-
-    def get_all_events(self):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """SELECT id, name, description, start_datetime, end_datetime, location,
-                      status, event_type, duplicate_policy
-               FROM events
-               ORDER BY COALESCE(start_datetime, created_at) DESC, id DESC"""
-        )
-        events = c.fetchall()
-        conn.close()
-        return events
-
-    def get_event(self, event_id):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """SELECT id, name, description, start_datetime, end_datetime, location, status, event_type, duplicate_policy
-               FROM events WHERE id = %s""",
-            (event_id,)
-        )
-        event = c.fetchone()
-        conn.close()
-        return event
-
-    def update_event(self, event_id, name, description=None, start_datetime=None, end_datetime=None,
-                     location=None, status='active', event_type='general', duplicate_policy='once_per_day'):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """UPDATE events
-               SET name = %s, description = %s, start_datetime = %s, end_datetime = %s,
-                   location = %s, status = %s, event_type = %s, duplicate_policy = %s
-               WHERE id = %s""",
-            (
-                name,
-                description,
-                start_datetime or None,
-                end_datetime or None,
-                location,
-                status or 'active',
-                event_type or 'general',
-                duplicate_policy or 'once_per_day',
-                event_id,
-            )
-        )
-        conn.commit()
-        updated = c.rowcount
-        conn.close()
-        return updated > 0
-
-    def get_latest_event(self):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """SELECT id, name, description, start_datetime, end_datetime, location, status, event_type, duplicate_policy
-               FROM events
-               ORDER BY COALESCE(start_datetime, created_at) DESC, id DESC
-               LIMIT 1"""
-        )
-        event = c.fetchone()
-        conn.close()
-        return event
-
-    def get_active_events(self):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """SELECT id, name, event_type, location
-               FROM events
-               WHERE status = 'active'
-               ORDER BY COALESCE(start_datetime, created_at) DESC, id DESC"""
-        )
-        events = c.fetchall()
-        conn.close()
-        return events
-
-    def add_event(self, name, description=None, start_datetime=None, end_datetime=None,
-                  location=None, status='active', event_type='general', duplicate_policy='once_per_day'):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """INSERT INTO events
-               (name, description, start_datetime, end_datetime, location, status, event_type, duplicate_policy, created_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (
-                name,
-                description,
-                start_datetime or None,
-                end_datetime or None,
-                location,
-                status or 'active',
-                event_type or 'general',
-                duplicate_policy or 'once_per_day',
-                datetime.now(),
-            )
-        )
-        conn.commit()
-        event_id = c.lastrowid
-        conn.close()
-        return event_id
-
-    def get_project_fields(self, project_id):
-        conn = self.connect()
-        c = conn.cursor()
-        type_column = 'field_type'
-        if not self._column_exists(c, 'project_fields', 'field_type') and self._column_exists(c, 'project_fields', 'type'):
-            type_column = 'type'
-        c.execute(
-            f"""SELECT id, project_id, name, {type_column}, is_required, display_order
-               FROM project_fields
-               WHERE project_id = %s
-               ORDER BY display_order, id""",
-            (project_id,)
-        )
-        fields = c.fetchall()
-        conn.close()
-        return fields
-
-    def get_project_fields_as_dicts(self, project_id):
-        return [
-            {
-                "id": field[0],
-                "project_id": field[1],
-                "name": field[2],
-                "field_type": field[3],
-                "is_required": bool(field[4]),
-                "display_order": field[5],
-            }
-            for field in self.get_project_fields(project_id)
-        ]
-
-    def get_event_fields(self, event_id):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """SELECT id, event_id, name, field_type, is_required, display_order
-               FROM event_fields
-               WHERE event_id = %s
-               ORDER BY display_order, id""",
-            (event_id,)
-        )
-        fields = c.fetchall()
-        conn.close()
-        return fields
-
-    def get_event_fields_as_dicts(self, event_id):
-        return [
-            {
-                "id": field[0],
-                "event_id": field[1],
-                "name": field[2],
-                "field_type": field[3],
-                "is_required": bool(field[4]),
-                "display_order": field[5],
-            }
-            for field in self.get_event_fields(event_id)
-        ]
-
-    def add_event_field(self, event_id, name, field_type='text', is_required=False, display_order=0):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute("SELECT id FROM events WHERE id = %s", (event_id,))
-        if not c.fetchone():
-            conn.close()
-            raise ValueError("Evento no encontrado")
-        c.execute(
-            """INSERT INTO event_fields
-               (event_id, name, field_type, is_required, display_order, created_at)
-               VALUES (%s, %s, %s, %s, %s, %s)""",
-            (event_id, name, field_type or 'text', bool(is_required), display_order or 0, datetime.now())
-        )
-        conn.commit()
-        field_id = c.lastrowid
-        conn.close()
-        return field_id
-
-    def delete_event_field(self, field_id):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute("DELETE FROM participant_event_field_values WHERE field_id = %s", (field_id,))
-        c.execute("DELETE FROM event_fields WHERE id = %s", (field_id,))
-        conn.commit()
-        deleted = c.rowcount
-        conn.close()
-        return deleted > 0
-
-    def update_event_rules(self, event_id, duplicate_policy, status=None):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """UPDATE events
-               SET duplicate_policy = %s, status = COALESCE(%s, status)
-               WHERE id = %s""",
-            (duplicate_policy or 'once_per_day', status or None, event_id)
-        )
-        conn.commit()
-        updated = c.rowcount
-        conn.close()
-        return updated > 0
-
-    def save_participant_event_field_values(self, participant_id, field_values):
-        if not participant_id or not field_values:
-            return
-
-        conn = self.connect()
-        c = conn.cursor()
-        now = datetime.now()
-        for field_id, value in field_values.items():
-            c.execute(
-                """SELECT id FROM participant_event_field_values
-                   WHERE participant_id = %s AND field_id = %s""",
-                (participant_id, field_id)
-            )
-            existing = c.fetchone()
-            if existing:
-                c.execute(
-                    """UPDATE participant_event_field_values
-                       SET value = %s, updated_at = %s
-                       WHERE id = %s""",
-                    (value, now, existing[0])
-                )
-            else:
-                c.execute(
-                    """INSERT INTO participant_event_field_values
-                       (participant_id, field_id, value, created_at, updated_at)
-                       VALUES (%s, %s, %s, %s, %s)""",
-                    (participant_id, field_id, value, now, now)
-                )
-        conn.commit()
-        conn.close()
-
-    def add_project_field(self, project_id, name, field_type='text', is_required=False, display_order=0):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
-        if not c.fetchone():
-            conn.close()
-            raise ValueError("Proyecto no encontrado")
-
-        type_column = 'field_type'
-        if not self._column_exists(c, 'project_fields', 'field_type') and self._column_exists(c, 'project_fields', 'type'):
-            type_column = 'type'
-        c.execute(
-            f"""INSERT INTO project_fields
-                (project_id, name, {type_column}, is_required, display_order, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s)""",
-            (project_id, name, field_type, bool(is_required), display_order or 0, datetime.now())
-        )
-        conn.commit()
-        field_id = c.lastrowid
-        conn.close()
-        return field_id
-
-    def delete_project_field(self, field_id):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute("DELETE FROM project_fields WHERE id = %s", (field_id,))
-        conn.commit()
-        deleted = c.rowcount
-        conn.close()
-        return deleted > 0
-
-
-    def resumen_ejecutivo_evento(self, event_id):
-        conn = self.connect()
-        try:
-            c = conn.cursor(dictionary=True)
-            participantes = self._estadisticas_participantes_evento(c, event_id)
-            asistencias = self._estadisticas_asistencia_evento(c, event_id)
-            hora_pico = self._hora_pico_evento(c, event_id)
-            return self._armar_resumen_ejecutivo(participantes, asistencias, hora_pico)
-        finally:
-            conn.close()
-
-    def _estadisticas_participantes_evento(self, cursor, event_id):
-        cursor.execute(self._consulta_estadisticas_participantes(), (event_id,))
-        return cursor.fetchone()
-
-    def _consulta_estadisticas_participantes(self):
-        return """SELECT COUNT(*) AS total,
-                         SUM(participant_type = 'alumno') AS alumnos,
-                         SUM(participant_type = 'asesor') AS asesores
-                  FROM participants WHERE event_id = %s AND status = 'active'"""
-
-    def _estadisticas_asistencia_evento(self, cursor, event_id):
-        cursor.execute("""SELECT COUNT(*) AS registros, COUNT(DISTINCT participant_id) AS presentes
-                          FROM attendance_events WHERE event_id = %s""", (event_id,))
-        return cursor.fetchone()
-
-    def _armar_resumen_ejecutivo(self, participantes, asistencias, hora_pico):
-        total = participantes["total"] or 0
-        presentes = asistencias["presentes"] or 0
-        return {
-            "participantes": total,
-            "asistencias": asistencias["registros"] or 0,
-            "presentes": presentes,
-            "pendientes": max(total - presentes, 0),
-            "porcentaje": round((presentes / total) * 100, 1) if total else 0,
-            "alumnos": participantes["alumnos"] or 0,
-            "asesores": participantes["asesores"] or 0,
-            "hora_pico": hora_pico or "Sin registros",
-        }
-
-    def _hora_pico_evento(self, cursor, event_id):
-        cursor.execute("""SELECT HOUR(timestamp) AS hora, COUNT(*) AS total
-                          FROM attendance_events WHERE event_id = %s
-                          GROUP BY HOUR(timestamp) ORDER BY total DESC LIMIT 1""", (event_id,))
-        row = cursor.fetchone()
-        return f"{int(row['hora']):02d}:00" if row and row["hora"] is not None else None
-
-    def proyectos_con_asistencia(self, event_id):
-        conn = self.connect()
-        try:
-            c = conn.cursor(dictionary=True)
-            c.execute(self._consulta_proyectos_con_asistencia(), (event_id, event_id, event_id))
-            return c.fetchall()
-        finally:
-            conn.close()
-
-    def _consulta_proyectos_con_asistencia(self):
-        return """SELECT pr.id, pr.name,
-                         COUNT(DISTINCT p.id) AS participantes,
-                         COUNT(DISTINCT ae.participant_id) AS presentes,
-                         COUNT(ae.id) AS registros
-                  FROM projects pr
-                  LEFT JOIN participants p ON p.project_id = pr.id AND p.event_id = %s AND p.status = 'active'
-                  LEFT JOIN attendance_events ae ON ae.participant_id = p.id AND ae.event_id = %s
-                  WHERE pr.event_id = %s
-                  GROUP BY pr.id, pr.name
-                  ORDER BY presentes DESC, pr.name"""
-
-    def detalle_asistencia_proyecto(self, event_id, project_id):
-        conn = self.connect()
-        try:
-            c = conn.cursor(dictionary=True)
-            c.execute(self._consulta_detalle_asistencia_proyecto(), (event_id, project_id, event_id))
-            return c.fetchall()
-        finally:
-            conn.close()
-
-    def _consulta_detalle_asistencia_proyecto(self):
-        return """SELECT p.full_name, p.participant_type, s.matricula, s.carrera,
-                         MAX(ae.timestamp) AS ultima_asistencia, COUNT(ae.id) AS registros
-                  FROM participants p
-                  LEFT JOIN students s ON p.legacy_student_id = s.id
-                  LEFT JOIN attendance_events ae ON ae.participant_id = p.id AND ae.event_id = %s
-                  WHERE p.project_id = %s AND p.event_id = %s AND p.status = 'active'
-                  GROUP BY p.id, p.full_name, p.participant_type, s.matricula, s.carrera
-                  ORDER BY ultima_asistencia IS NULL, p.participant_type, p.full_name"""
-
-    def ultima_asistencia_participante(self, participant_id, event_id=None, event_type=None):
-        conn = self.connect()
-        try:
-            c = conn.cursor(dictionary=True)
-            query, params = self._consulta_ultima_asistencia(participant_id, event_id, event_type)
-            c.execute(query, params)
-            return c.fetchone()
-        finally:
-            conn.close()
-
-    def _consulta_ultima_asistencia(self, participant_id, event_id, event_type):
-        query = """SELECT ae.timestamp, ae.event_type, e.name AS event_name
-                   FROM attendance_events ae LEFT JOIN events e ON ae.event_id = e.id
-                   WHERE ae.participant_id = %s"""
-        params = [participant_id]
-        if event_id:
-            query += " AND ae.event_id = %s"
-            params.append(event_id)
-        if event_type:
-            query += " AND ae.event_type = %s"
-            params.append(event_type)
-        return query + " ORDER BY ae.timestamp DESC LIMIT 1", params
-
-    def exportar_reporte_final_evento_pdf(self, event_id):
-        evento = self.get_event(event_id)
-        resumen = self.resumen_ejecutivo_evento(event_id)
-        proyectos = self.proyectos_con_asistencia(event_id)
-        datos = self.get_event_attendance_report(event_id)
-        ruta = self._attendance_report_path("reporte_final_evento", "pdf")
-        self._crear_reporte_final_pdf(ruta, evento, resumen, proyectos, datos)
-        return ruta
-
-    def exportar_reporte_final_evento_excel(self, event_id):
-        evento = self.get_event(event_id)
-        resumen = self.resumen_ejecutivo_evento(event_id)
-        proyectos = self.proyectos_con_asistencia(event_id)
-        datos = self.get_event_attendance_report(event_id)
-        ruta = self._attendance_report_path("reporte_final_evento", "xlsx")
-        self._crear_reporte_final_excel(ruta, evento, resumen, proyectos, datos)
-        return ruta
-
-    def _crear_reporte_final_pdf(self, ruta, evento, resumen, proyectos, datos):
-        doc = self._attendance_pdf_doc(ruta)
-        estilos = self._attendance_pdf_styles()
-        elementos = self._reporte_final_elementos(evento, resumen, proyectos, datos, estilos)
-        doc.build(elementos)
-
-    def _reporte_final_elementos(self, evento, resumen, proyectos, datos, estilos):
-        elementos = self._portada_reporte_final(evento, resumen, estilos)
-        elementos += self._seccion_proyectos_final(proyectos, estilos)
-        elementos += self._seccion_detalle_final(datos, estilos)
-        elementos.append(self._bloque_firmas_final(estilos))
-        return elementos
-
-    def _portada_reporte_final(self, evento, resumen, estilos):
-        return [
-            self._encabezado_reporte_final(evento, estilos),
-            Spacer(1, 0.16 * inch),
-            self._tabla_metricas_reporte(resumen, estilos),
-            Spacer(1, 0.22 * inch),
-        ]
-
-    def _encabezado_reporte_final(self, evento, estilos):
-        nombre = escape(str(evento[1] if evento else "Evento"))
-        generado = datetime.now().strftime("%Y-%m-%d %H:%M")
-        titulo = Paragraph("Reporte final oficial", estilos["ReportTitle"])
-        meta = Paragraph(f"AsisTec | Evento: {nombre} | Generado: {generado}", estilos["ReportSubtitle"])
-        tabla = Table([[titulo], [meta]], colWidths=[10 * inch])
-        tabla.setStyle(self._estilo_banda_reporte_final())
-        return tabla
-
-    def _estilo_banda_reporte_final(self):
-        return TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#eefdf5")),
-            ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#10a779")),
-            ("LEFTPADDING", (0, 0), (-1, -1), 14),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 14),
-            ("TOPPADDING", (0, 0), (-1, -1), 10),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-        ])
-
-    def _tabla_metricas_reporte(self, resumen, estilos):
-        metricas = self._metricas_reporte_final(resumen, estilos)
-        tabla = Table([metricas], colWidths=[1.65 * inch] * 6)
-        tabla.setStyle(self._estilo_metricas_reporte())
-        return tabla
-
-    def _metricas_reporte_final(self, resumen, estilos):
-        datos = [("Participantes", resumen["participantes"]), ("Presentes", resumen["presentes"]), ("Pendientes", resumen["pendientes"]), ("Asistencia", f"{resumen['porcentaje']}%"), ("Registros", resumen["asistencias"]), ("Hora pico", resumen["hora_pico"])]
-        return [self._celda_metrica_reporte(label, value, estilos) for label, value in datos]
-
-    def _celda_metrica_reporte(self, label, value, estilos):
-        return [Paragraph(str(label), estilos["MetricLabel"]), Paragraph(str(value), estilos["MetricValue"])]
-
-    def _estilo_metricas_reporte(self):
-        return TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.white),
-            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#dbe4ee")),
-            ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#dbe4ee")),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING", (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-        ])
-
-    def _seccion_proyectos_final(self, proyectos, estilos):
-        return [Paragraph("Resumen por proyecto", estilos["Heading2"]), self._tabla_resumen_proyectos(proyectos), Spacer(1, 0.18 * inch)]
-
-    def _tabla_resumen_proyectos(self, proyectos):
-        filas = [["Proyecto", "Participantes", "Presentes", "Pendientes", "% asistencia"]]
-        filas += [self._fila_resumen_proyecto(proyecto) for proyecto in proyectos]
-        tabla = Table(filas, colWidths=[3.4 * inch, 1.15 * inch, 1.05 * inch, 1.05 * inch, 1.15 * inch], repeatRows=1)
-        tabla.setStyle(self._attendance_pdf_table_style())
-        return tabla
-
-    def _seccion_detalle_final(self, datos, estilos):
-        titulo = Paragraph("Detalle de asistencia", estilos["Heading2"])
-        if not datos:
-            return [titulo, Paragraph("Sin registros de asistencia capturados.", estilos["ReportMeta"])]
-        tabla = self._attendance_pdf_table(self._event_report_table_data(datos), self._event_report_widths())
-        return [titulo, tabla, Spacer(1, 0.18 * inch)]
-
-    def _bloque_firmas_final(self, estilos):
-        fila = [["Responsable del evento", "Coordinacion", "Validacion"]]
-        tabla = Table(fila, colWidths=[2.45 * inch] * 3)
-        tabla.setStyle(self._estilo_firmas_final())
-        return tabla
-
-    def _estilo_firmas_final(self):
-        return TableStyle([
-            ("LINEABOVE", (0, 0), (-1, 0), 0.8, colors.HexColor("#64748b")),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#475569")),
-            ("TOPPADDING", (0, 0), (-1, -1), 18),
-        ])
-
-    def _fila_resumen_proyecto(self, proyecto):
-        participantes = proyecto["participantes"] or 0
-        presentes = proyecto["presentes"] or 0
-        porcentaje = round((presentes / participantes) * 100, 1) if participantes else 0
-        return [proyecto["name"], participantes, presentes, max(participantes - presentes, 0), f"{porcentaje}%"]
-
-    def _crear_reporte_final_excel(self, ruta, evento, resumen, proyectos, datos):
-        workbook = xlsxwriter.Workbook(ruta)
-        self._hoja_resumen_final(workbook, evento, resumen, proyectos)
-        self._hoja_asistencia_final(workbook, datos)
-        workbook.close()
-
-    def _hoja_resumen_final(self, workbook, evento, resumen, proyectos):
-        hoja = workbook.add_worksheet("Resumen")
-        hoja.write("A1", "Reporte final oficial - AsisTec")
-        hoja.write("A2", evento[1] if evento else "Evento")
-        for fila, item in enumerate(resumen.items(), 4):
-            hoja.write(fila, 0, item[0])
-            hoja.write(fila, 1, item[1])
-        self._escribir_proyectos_final(hoja, proyectos)
-
-    def _escribir_proyectos_final(self, hoja, proyectos):
-        inicio = 14
-        encabezados = ["Proyecto", "Participantes", "Presentes", "Registros"]
-        for col, encabezado in enumerate(encabezados):
-            hoja.write(inicio, col, encabezado)
-        for fila, proyecto in enumerate(proyectos, inicio + 1):
-            hoja.write(fila, 0, proyecto["name"])
-            hoja.write(fila, 1, proyecto["participantes"])
-            hoja.write(fila, 2, proyecto["presentes"])
-            hoja.write(fila, 3, proyecto["registros"])
-
-    def _hoja_asistencia_final(self, workbook, datos):
-        hoja = workbook.add_worksheet("Asistencia")
-        encabezados = ["Matricula", "Nombre", "Apellido P", "Apellido M", "Carrera", "Proyecto", "Evento", "Tipo", "Fecha/Hora"]
-        for col, encabezado in enumerate(encabezados):
-            hoja.write(0, col, encabezado)
-        for fila, row in enumerate(datos, 1):
-            for col, valor in enumerate(row):
-                hoja.write(fila, col, self._format_report_datetime(valor) if col == 8 else valor)
-
-    def get_total_students(self, event_id=None):
-        conn = self.connect()
-        c = conn.cursor()
-        if event_id:
-            c.execute("SELECT COUNT(*) FROM students WHERE event_id = %s", (event_id,))
-        else:
-            c.execute("SELECT COUNT(*) FROM students")
-        total = c.fetchone()[0]
-        conn.close()
-        return total
-
-    def get_total_attendance(self, event_id=None):
-        conn = self.connect()
-        c = conn.cursor()
-        if event_id:
-            c.execute("SELECT COUNT(*) FROM attendance_events WHERE event_id = %s", (event_id,))
-        else:
-            c.execute("SELECT COUNT(*) FROM attendance")
-        total = c.fetchone()[0]
-        conn.close()
-        return total
-
-    def get_all_students(self):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
-                      s.project_id, s.event_id, COALESCE(p.participant_type, 'alumno')
-               FROM students s
-               LEFT JOIN participants p ON p.legacy_student_id = s.id"""
-        )
-        students = c.fetchall()
-        conn.close()
-        return students
-
-    def get_student_by_matricula(self, matricula):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute("SELECT id, first_name, last_name_p, last_name_m, matricula, carrera, project_id, event_id FROM students WHERE matricula = %s", (matricula,))
-        student = c.fetchone()
-        conn.close()
-        return student
-
-    def get_student_by_id(self, student_id):
-        conn = self.connect()
-        c = conn.cursor(dictionary=True)
-        c.execute(
-            """SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
-                      s.project_id, s.event_id, p.id AS participant_id, p.email, p.participant_type,
-                      pr.name AS project_name
-               FROM students s
-               LEFT JOIN participants p ON p.legacy_student_id = s.id
-               LEFT JOIN projects pr ON s.project_id = pr.id
-               WHERE s.id = %s""",
-            (student_id,)
-        )
-        student = c.fetchone()
-        conn.close()
-        return student
-
-    def update_student_participant(self, student_id, first_name, last_name_p, last_name_m, matricula,
-                                   carrera, project_id=None, email=None, participant_type='alumno'):
-        conn = self.connect()
-        c = conn.cursor()
-        c.execute(
-            """UPDATE students
-               SET first_name = %s, last_name_p = %s, last_name_m = %s,
-                   matricula = %s, carrera = %s, project_id = %s
-               WHERE id = %s""",
-            (first_name, last_name_p, last_name_m, matricula, carrera, project_id or None, student_id)
-        )
-        full_name = f"{first_name} {last_name_p} {last_name_m}".strip()
-        c.execute(
-            """UPDATE participants
-               SET full_name = %s, email = %s, participant_type = %s,
-                   project_id = %s, updated_at = %s
-               WHERE legacy_student_id = %s""",
-            (full_name, email or None, participant_type or 'alumno', project_id or None, datetime.now(), student_id)
-        )
-        conn.commit()
-        updated = c.rowcount
-        conn.close()
-        return updated > 0
-
-    def upload_students_from_excel(self, file, project_id, event_id=None):
-        df, _ = self.prepare_excel_import_dataframe(file)
-        required_columns = ['first_name', 'last_name_p', 'last_name_m', 'matricula', 'carrera']
-        if not all(col in df.columns for col in required_columns):
-            raise ValueError(
-                "El Excel debe contener las columnas: first_name, last_name_p, last_name_m, matricula, carrera "
-                "o el formato con Proyecto, Folio, Evento, Nombre Autores/Asesores y Num. Control/Departamento"
-            )
-
-        conn = self.connect()
-        c = conn.cursor()
-        errors = []
-        success_count = 0
-        imported_project_ids = set()
-        project_fields = []
-        event_fields = []
-        project_column = next((col for col in ('project_id', 'project_name', 'project', 'proyecto') if col in df.columns), None)
-        project_lookup = {}
-        project_fields_cache = {}
-
-        if event_id:
-            c.execute("SELECT id FROM events WHERE id = %s", (event_id,))
-            if not c.fetchone():
-                conn.close()
-                raise ValueError("Evento no encontrado")
-            event_fields = self.get_event_fields(event_id)
-
-        if project_id:
-            c.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
-            if not c.fetchone():
-                conn.close()
-                raise ValueError("Proyecto no encontrado")
-            project_fields = self.get_project_fields(project_id)
-            project_fields_cache[int(project_id)] = project_fields
-
-        if project_column and project_column != 'project_id':
-            project_names = []
-            for raw_project in df[project_column].dropna().tolist():
-                project_name = str(raw_project).strip()
-                if project_name and project_name not in project_lookup:
-                    project_names.append(project_name)
-                    project_lookup[project_name] = None
-            for project_name in project_names:
-                project_lookup[project_name] = self._get_or_create_project_by_name_with_cursor(c, project_name, event_id)
-            conn.commit()
-
-        required_dynamic_columns = [field[2] for field in project_fields if field[4]]
-        required_dynamic_columns += [
-            field[2]
-            for field in event_fields
-            if field[4] and self._normalize_field_name(field[2]) not in self.BASE_REGISTRATION_FIELD_NAMES
-        ]
-        missing_dynamic_columns = [
-            name
-            for name in required_dynamic_columns
-            if self._find_excel_column(df, [name]) is None
-            and self._normalize_field_name(name) not in ("correo", "email")
-        ]
-        if missing_dynamic_columns:
-            conn.close()
-            raise ValueError(
-                "El Excel debe contener las columnas configuradas como obligatorias: "
-                + ", ".join(missing_dynamic_columns)
-            )
-
-        for index, row in df.iterrows():
-            student_id = str(uuid.uuid4())
-            matricula = str(row['matricula'])
-            try:
-                participant_type = str(row['participant_type']).strip().lower() if 'participant_type' in df.columns and not pd.isna(row['participant_type']) else 'alumno'
-                email_value = str(row['email']).strip() if 'email' in df.columns and not pd.isna(row['email']) else None
-                row_project_id = project_id
-                if project_column and not pd.isna(row[project_column]):
-                    raw_project = str(row[project_column]).strip()
-                    if raw_project:
-                        if project_column == 'project_id' and raw_project.isdigit():
-                            row_project_id = int(raw_project)
-                        else:
-                            row_project_id = project_lookup.get(raw_project)
-                            if row_project_id is None:
-                                row_project_id = self._get_or_create_project_by_name_with_cursor(c, raw_project, event_id)
-                                project_lookup[raw_project] = row_project_id
-                if row_project_id:
-                    imported_project_ids.add(row_project_id)
-                row_project_fields = project_fields
-                if row_project_id and row_project_id != project_id:
-                    if row_project_id not in project_fields_cache:
-                        project_fields_cache[row_project_id] = self.get_project_fields(row_project_id)
-                    row_project_fields = project_fields_cache[row_project_id]
-                dynamic_values = {}
-                for field in row_project_fields:
-                    field_id = field[0]
-                    field_name = field[2]
-                    is_required = bool(field[4])
-                    raw_value = self._row_value_for_field(row, field_name)
-                    value = "" if pd.isna(raw_value) else str(raw_value).strip()
-                    if is_required and not value:
-                        raise ValueError(f"Falta {field_name}")
-                    if value:
-                        dynamic_values[field_id] = value
-
-                event_dynamic_values = {}
-                for field in event_fields:
-                    field_id = field[0]
-                    field_name = field[2]
-                    if self._normalize_field_name(field_name) in self.BASE_REGISTRATION_FIELD_NAMES:
-                        continue
-                    is_required = bool(field[4])
-                    raw_value = self._row_value_for_field(row, field_name)
-                    value = "" if pd.isna(raw_value) else str(raw_value).strip()
-                    if is_required and not value:
-                        raise ValueError(f"Falta {field_name}")
-                    if value:
-                        event_dynamic_values[field_id] = value
-                    if self._normalize_field_name(field_name) in ('correo', 'email') and value:
-                        email_value = value
-
-                c.execute('''INSERT INTO students (id, first_name, last_name_p, last_name_m, matricula, carrera, event_id, project_id)
-                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)''',
-                          (student_id, str(row['first_name']), str(row['last_name_p']), str(row['last_name_m']),
-                           matricula, str(row['carrera']), event_id, row_project_id))
-                participant_id = self._ensure_participant_for_student(
-                    c,
-                    student_id,
-                    str(row['first_name']),
-                    str(row['last_name_p']),
-                    str(row['last_name_m']),
-                    row_project_id,
-                    event_id,
-                    email_value,
-                    participant_type
-                )
-                self._ensure_credential_for_participant(c, participant_id)
-                self._save_participant_field_values(c, participant_id, dynamic_values)
-                if event_dynamic_values:
-                    now = datetime.now()
-                    for field_id, value in event_dynamic_values.items():
-                        c.execute(
-                            """INSERT INTO participant_event_field_values
-                               (participant_id, field_id, value, created_at, updated_at)
-                               VALUES (%s, %s, %s, %s, %s)""",
-                            (participant_id, field_id, value, now, now)
-                        )
-                conn.commit()
-                success_count += 1
-            except mysql.connector.Error as e:
-                conn.rollback()
-                if e.errno == 1062:
-                    errors.append(f"Matrícula {matricula} ya registrada")
-                else:
-                    errors.append(f"Error en matrícula {matricula}: {str(e)}")
-            except Exception as e:
-                conn.rollback()
-                errors.append(f"Error en matrícula {matricula}: {str(e)}")
-
-        conn.close()
-        project_summary = ""
-        if project_column and imported_project_ids:
-            project_summary = f" Proyectos asociados/creados: {len(imported_project_ids)}."
-        if errors:
-            return f"Procesados {success_count} estudiantes.{project_summary} Errores: {', '.join(errors)}"
-        return f"Se procesaron {success_count} estudiantes correctamente.{project_summary}"
-
-    def export_attendance_to_excel(self, project_id, start_date, end_date):
-        conn = self.connect()
-        c = conn.cursor()
-        query = """
-            SELECT s.matricula, s.first_name, s.last_name_p, s.last_name_m, s.carrera, p.name, a.timestamp
-            FROM attendance a
-            JOIN students s ON a.student_id = s.id
-            LEFT JOIN projects p ON s.project_id = p.id
-            WHERE 1=1
-        """
-        params = []
-        if start_date:
-            query += " AND DATE(a.timestamp) >= %s"
-            params.append(start_date)
-        if end_date:
-            query += " AND DATE(a.timestamp) <= %s"
-            params.append(end_date)
-        if project_id:
-            query += " AND s.project_id = %s"
-            params.append(project_id)
-        c.execute(query, params)
-        report_data = c.fetchall()
-        conn.close()
-
-        if not report_data:
-            raise ValueError("No hay datos para el reporte")
-
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        report_dir = 'static/reports'
-        if not os.path.exists(report_dir):
-            os.makedirs(report_dir)
-        report_path = os.path.join(report_dir, f'attendance_report_{timestamp}.xlsx').replace('\\', '/')
-
-        workbook = xlsxwriter.Workbook(report_path)
-        worksheet = workbook.add_worksheet()
-        worksheet.write('A1', 'Reporte de Asistencias - AsisTec')
-        headers = ['Matrícula', 'Nombre', 'Apellido P', 'Apellido M', 'Carrera', 'Proyecto', 'Fecha/Hora']
-        for col, header in enumerate(headers):
-            worksheet.write(1, col, header)
-        for row_idx, row in enumerate(report_data, 2):
-            worksheet.write(row_idx, 0, row[0])
-            worksheet.write(row_idx, 1, row[1])
-            worksheet.write(row_idx, 2, row[2])
-            worksheet.write(row_idx, 3, row[3])
-            worksheet.write(row_idx, 4, row[4])
-            worksheet.write(row_idx, 5, row[5] or 'Sin proyecto')
-            worksheet.write(row_idx, 6, row[6].strftime('%Y-%m-%d %H:%M:%S'))
-        workbook.close()
-
-        return report_path
-
-    def get_event_attendance_report(self, event_id, start_date=None, end_date=None, project_id=None):
-        conn = self.connect()
-        c = conn.cursor()
-        query = """
-            SELECT s.matricula, s.first_name, s.last_name_p, s.last_name_m, s.carrera,
-                   p.name, e.name, ae.event_type, ae.timestamp
-            FROM attendance_events ae
-            LEFT JOIN credentials cdr ON ae.credential_id = cdr.id
-            LEFT JOIN participants part ON ae.participant_id = part.id
-            LEFT JOIN students s ON part.legacy_student_id = s.id
-            LEFT JOIN projects p ON s.project_id = p.id
-            LEFT JOIN events e ON ae.event_id = e.id
-            WHERE ae.event_id = %s
-        """
-        params = [event_id]
-        if start_date:
-            query += " AND DATE(ae.timestamp) >= %s"
-            params.append(start_date)
-        if end_date:
-            query += " AND DATE(ae.timestamp) <= %s"
-            params.append(end_date)
-        if project_id:
-            query += " AND s.project_id = %s"
-            params.append(project_id)
-        query += " ORDER BY ae.timestamp DESC"
-        c.execute(query, params)
-        report_data = c.fetchall()
-        conn.close()
-        return report_data
-
-    def export_event_attendance_to_excel(self, event_id, project_id, start_date, end_date):
-        report_data = self.get_event_attendance_report(event_id, start_date, end_date, project_id)
-        if not report_data:
-            raise ValueError("No hay datos para el reporte")
-
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        report_dir = 'static/reports'
-        if not os.path.exists(report_dir):
-            os.makedirs(report_dir)
-        report_path = os.path.join(report_dir, f'event_report_{timestamp}.xlsx').replace('\\', '/')
-
-        workbook = xlsxwriter.Workbook(report_path)
-        worksheet = workbook.add_worksheet()
-        worksheet.write('A1', 'Reporte de Asistencias por Evento')
-        headers = ['Matricula', 'Nombre', 'Apellido P', 'Apellido M', 'Carrera', 'Proyecto', 'Evento', 'Tipo', 'Fecha/Hora']
-        for col, header in enumerate(headers):
-            worksheet.write(1, col, header)
-        for row_idx, row in enumerate(report_data, 2):
-            for col_idx, value in enumerate(row):
-                worksheet.write(row_idx, col_idx, value.strftime('%Y-%m-%d %H:%M:%S') if hasattr(value, 'strftime') else value)
-        workbook.close()
-        return report_path
-
-    def export_event_attendance_to_pdf(self, event_id, project_id, start_date, end_date):
-        report_data = self.get_event_attendance_report(event_id, start_date, end_date, project_id)
-        if not report_data:
-            raise ValueError("No hay datos para el reporte")
-
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        report_dir = 'static/reports'
-        if not os.path.exists(report_dir):
-            os.makedirs(report_dir)
-        report_path = os.path.join(report_dir, f'event_report_{timestamp}.pdf').replace('\\', '/')
-
-        doc = self._attendance_pdf_doc(report_path)
-        elements = self._event_attendance_pdf_elements(report_data, project_id, start_date, end_date)
-        doc.build(elements)
-        return report_path
-
-    def _attendance_pdf_doc(self, report_path):
-        return SimpleDocTemplate(
-            report_path, pagesize=landscape(letter),
-            leftMargin=0.35 * inch, rightMargin=0.35 * inch,
-            topMargin=0.35 * inch, bottomMargin=0.35 * inch,
-        )
-
-    def _event_attendance_pdf_elements(self, report_data, project_id, start_date, end_date):
-        styles = self._attendance_pdf_styles()
-        filters = self._event_report_filters(report_data, project_id, start_date, end_date)
-        table = self._attendance_pdf_table(self._event_report_table_data(report_data), self._event_report_widths())
-        return self._attendance_pdf_header("Reporte de asistencias por evento", len(report_data), filters, styles) + [table]
-
-    def _attendance_pdf_styles(self):
-        styles = getSampleStyleSheet()
-        styles.add(ParagraphStyle("ReportTitle", parent=styles["Title"], fontSize=20, leading=24, textColor=colors.HexColor("#08223c"), alignment=0))
-        styles.add(ParagraphStyle("ReportSubtitle", parent=styles["Normal"], fontSize=9, leading=12, textColor=colors.HexColor("#475569")))
-        styles.add(ParagraphStyle("ReportMeta", parent=styles["Normal"], fontSize=8, textColor=colors.HexColor("#475569")))
-        styles.add(ParagraphStyle("ReportCell", parent=styles["Normal"], fontSize=6.8, leading=8, textColor=colors.HexColor("#0f172a")))
-        styles.add(ParagraphStyle("ReportHeader", parent=styles["Normal"], fontSize=7, leading=8, textColor=colors.white, alignment=1))
-        styles.add(ParagraphStyle("MetricLabel", parent=styles["Normal"], fontSize=7, leading=8, textColor=colors.HexColor("#047c70"), alignment=1))
-        styles.add(ParagraphStyle("MetricValue", parent=styles["Normal"], fontSize=15, leading=18, textColor=colors.HexColor("#08223c"), alignment=1))
-        return styles
-
-    def _event_report_filters(self, report_data, project_id, start_date, end_date):
-        return {
-            "Evento": report_data[0][6] or "Sin evento",
-            "Proyecto": self._selected_project_name(report_data, project_id),
-            "Fechas": self._date_range_label(start_date, end_date),
-        }
-
-    def _selected_project_name(self, report_data, project_id):
-        if not project_id:
-            return "Todos"
-        return report_data[0][5] or f"Proyecto {project_id}"
-
-    def _date_range_label(self, start_date, end_date):
-        if start_date and end_date:
-            return f"{start_date} a {end_date}"
-        return start_date or end_date or "Todas"
-
-    def _attendance_pdf_header(self, title, total, filters, styles):
-        meta = " | ".join(f"{key}: {value}" for key, value in filters.items())
-        generated = datetime.now().strftime("%Y-%m-%d %H:%M")
-        return [
-            Paragraph(title, styles["Title"]),
-            Paragraph(f"Total de registros: {total} | Generado: {generated}", styles["ReportMeta"]),
-            Paragraph(meta, styles["ReportMeta"]),
-            Spacer(1, 0.12 * inch),
-        ]
-
-    def _event_report_table_data(self, report_data):
-        headers = ["Matricula", "Nombre", "Apellido P", "Apellido M", "Carrera", "Proyecto", "Evento", "Tipo", "Fecha/Hora"]
-        rows = [self._event_report_row(row) for row in report_data]
-        return [headers] + rows
-
-    def _event_report_row(self, row):
-        return [
-            row[0], row[1], row[2], row[3], row[4], row[5] or "Sin proyecto",
-            row[6] or "Sin evento", row[7] or "entrada", self._format_report_datetime(row[8]),
-        ]
-
-    def _format_report_datetime(self, value):
-        return value.strftime("%Y-%m-%d %H:%M") if hasattr(value, "strftime") else value
-
-    def _attendance_pdf_table(self, data, widths):
-        styles = self._attendance_pdf_styles()
-        table_data = [[self._pdf_cell(value, styles["ReportHeader" if row == 0 else "ReportCell"]) for value in line] for row, line in enumerate(data)]
-        table = Table(table_data, colWidths=widths, repeatRows=1)
-        table.setStyle(self._attendance_pdf_table_style())
-        return table
-
-    def _pdf_cell(self, value, style):
-        return Paragraph(escape(str(value or "")), style)
-
-    def _event_report_widths(self):
-        return [value * inch for value in [0.78, 0.9, 0.85, 0.85, 1.25, 1.15, 1.15, 0.72, 1.05]]
-
-    def _attendance_pdf_table_style(self):
-        return TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#08223c")),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
-            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#dbe4ee")),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ])
-
-    def export_attendance_to_pdf(self, project_id, start_date, end_date):
-        conn = self.connect()
-        c = conn.cursor()
-        query = """
-            SELECT s.matricula, s.first_name, s.last_name_p, s.last_name_m, s.carrera, p.name, a.timestamp
-            FROM attendance a
-            JOIN students s ON a.student_id = s.id
-            LEFT JOIN projects p ON s.project_id = p.id
-            WHERE 1=1
-        """
-        params = []
-        if start_date:
-            query += " AND DATE(a.timestamp) >= %s"
-            params.append(start_date)
-        if end_date:
-            query += " AND DATE(a.timestamp) <= %s"
-            params.append(end_date)
-        if project_id:
-            query += " AND s.project_id = %s"
-            params.append(project_id)
-        c.execute(query, params)
-        report_data = c.fetchall()
-        conn.close()
-
-        if not report_data:
-            raise ValueError("No hay datos para el reporte")
-
-        report_path = self._attendance_report_path("attendance_report", "pdf")
-        doc = self._attendance_pdf_doc(report_path)
-        elements = self._legacy_attendance_pdf_elements(report_data, project_id, start_date, end_date)
-        doc.build(elements)
-        return report_path
-
-    def _attendance_report_path(self, prefix, extension):
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        report_dir = 'static/reports'
-        if not os.path.exists(report_dir):
-            os.makedirs(report_dir)
-        return os.path.join(report_dir, f'{prefix}_{timestamp}.{extension}').replace('\\', '/')
-
-    def _legacy_attendance_pdf_elements(self, report_data, project_id, start_date, end_date):
-        styles = self._attendance_pdf_styles()
-        filters = {"Proyecto": project_id or "Todos", "Fechas": self._date_range_label(start_date, end_date)}
-        table = self._attendance_pdf_table(self._legacy_report_table_data(report_data), self._legacy_report_widths())
-        return self._attendance_pdf_header("Reporte de asistencias - AsisTec", len(report_data), filters, styles) + [table]
-
-    def _legacy_report_table_data(self, report_data):
-        headers = ["Matricula", "Nombre", "Apellido P", "Apellido M", "Carrera", "Proyecto", "Fecha/Hora"]
-        rows = [self._legacy_report_row(row) for row in report_data]
-        return [headers] + rows
-
-    def _legacy_report_row(self, row):
-        return [row[0], row[1], row[2], row[3], row[4], row[5] or "Sin proyecto", self._format_report_datetime(row[6])]
-
-    def _legacy_report_widths(self):
-        return [value * inch for value in [0.9, 1.05, 1.0, 1.0, 1.55, 1.45, 1.15]]
-
-    def _student_filter_where(self, matricula_search='', apellido_p_search='', project_id_filter='', event_id_filter=''):
-        clauses = ["1=1"]
-        params = []
-        if matricula_search:
-            clauses.append("s.matricula LIKE %s")
-            params.append(f"%{matricula_search}%")
-        if apellido_p_search:
-            clauses.append("s.last_name_p LIKE %s")
-            params.append(f"%{apellido_p_search}%")
-        if project_id_filter:
-            clauses.append("s.project_id = %s")
-            params.append(project_id_filter)
-        if event_id_filter:
-            clauses.append("s.event_id = %s")
-            params.append(event_id_filter)
-        return " AND ".join(clauses), params
-
-    def count_students_filtered(self, matricula_search='', apellido_p_search='', project_id_filter='', event_id_filter=''):
-        conn = self.connect()
-        c = conn.cursor()
-        where_clause, params = self._student_filter_where(
-            matricula_search,
-            apellido_p_search,
-            project_id_filter,
-            event_id_filter,
-        )
-        c.execute(f"SELECT COUNT(*) FROM students s WHERE {where_clause}", params)
-        total = c.fetchone()[0]
-        conn.close()
-        return total
-
-    def get_all_students_filtered(
-        self,
-        matricula_search='',
-        apellido_p_search='',
-        project_id_filter='',
-        event_id_filter='',
-        sort_by='proyecto',
-        sort_dir='asc',
-        limit=None,
-        offset=0,
-    ):
-        conn = self.connect()
-        try:
-            query, params = self._filtered_students_query(
-                matricula_search, apellido_p_search, project_id_filter, event_id_filter, sort_by, sort_dir, limit, offset
-            )
-            c = conn.cursor()
-            c.execute(query, params)
-            return c.fetchall()
-        finally:
-            conn.close()
-
-    def get_students_filtered_page(
-        self,
-        matricula_search='',
-        apellido_p_search='',
-        project_id_filter='',
-        event_id_filter='',
-        sort_by='proyecto',
-        sort_dir='asc',
-        limit=10,
-        offset=0,
-    ):
-        conn = self.connect()
-        try:
-            query, params = self._filtered_students_query(
-                matricula_search, apellido_p_search, project_id_filter, event_id_filter, sort_by, sort_dir, limit, offset, True
-            )
-            c = conn.cursor()
-            c.execute(query, params)
-            rows = c.fetchall()
-            total = rows[0][-1] if rows else 0
-            return rows, total
-        finally:
-            conn.close()
-
-    def _filtered_students_query(self, matricula, apellido, project_id, event_id, sort_by, sort_dir, limit, offset, include_total=False):
-        where_clause, params = self._student_filter_where(matricula, apellido, project_id, event_id)
-        query = self._filtered_students_select(where_clause, sort_by, sort_dir, include_total)
-        if limit is not None:
-            query += " LIMIT %s OFFSET %s"
-            params.extend([int(limit), int(offset or 0)])
-        return query, params
-
-    def _filtered_students_select(self, where_clause, sort_by, sort_dir, include_total=False):
-        sort_expression = self._student_sort_expression(sort_by)
-        direction = 'DESC' if str(sort_dir).lower() == 'desc' else 'ASC'
-        total_column = ", COUNT(*) OVER() AS total_count" if include_total else ""
-        return f"""
-            SELECT s.id, s.first_name, s.last_name_p, s.last_name_m, s.matricula, s.carrera,
-                   s.project_id, s.event_id, COALESCE(p.participant_type, 'alumno'), pr.name AS project_name,
-                   cr.token AS credential_token, cr.qr_path AS credential_qr_path{total_column}
-            FROM students s
-            LEFT JOIN participants p ON p.legacy_student_id = s.id
-            LEFT JOIN projects pr ON s.project_id = pr.id
-            LEFT JOIN ({self._latest_credentials_select()}) cr ON cr.participant_id = p.id
-            WHERE {where_clause}
-            ORDER BY {sort_expression} {direction}, s.last_name_p ASC, s.first_name ASC, s.matricula ASC
-        """
-
-    def _latest_credentials_select(self):
-        return """
-            SELECT c.participant_id, c.token, c.qr_path
-            FROM credentials c
-            JOIN (
-                SELECT participant_id, MAX(created_at) AS created_at
-                FROM credentials
-                GROUP BY participant_id
-            ) latest ON latest.participant_id = c.participant_id
-                   AND latest.created_at = c.created_at
-        """
-
-    def _student_sort_expression(self, sort_by):
-        sort_columns = {
-            'matricula': 's.matricula',
-            'nombre': 's.first_name',
-            'apellido_p': 's.last_name_p',
-            'apellido_m': 's.last_name_m',
-            'carrera': 's.carrera',
-            'tipo': "COALESCE(p.participant_type, 'alumno')",
-            'proyecto': 'project_name',
-        }
-        return sort_columns.get(sort_by, 'project_name')
+# Alias temporal para integraciones que aÃºn importan el nombre anterior.
+DatabaseManager = GestorBaseDatos
+
+# Alias temporales para compatibilidad con la API anterior.
+GestorBaseDatos._create_pool = GestorBaseDatos._crear_grupo_conexiones
+GestorBaseDatos._ensure_column = GestorBaseDatos._asegurar_columna
+GestorBaseDatos._ensure_index = GestorBaseDatos._asegurar_indice
+GestorBaseDatos._ensure_performance_indexes = GestorBaseDatos._asegurar_rendimiento_indices
+GestorBaseDatos._ensure_project_event_unique_index = GestorBaseDatos._asegurar_proyecto_evento_unico_indice
+GestorBaseDatos._get_column_data_type = GestorBaseDatos._obtener_columna_datos_tipo
+GestorBaseDatos.connect = GestorBaseDatos.conectar
+GestorBaseDatos.init_db = GestorBaseDatos.inicializar_bd
+
+# Alias temporales para compatibilidad con la API anterior.
+GestorBaseDatos._column_exists = GestorBaseDatos._columna_exists
+GestorBaseDatos._index_exists = GestorBaseDatos._indice_exists

@@ -8,8 +8,8 @@
         <p class="page-subtitle">Escaneo, consulta de participantes y reportes de los eventos que tienes asignados.</p>
     </div>
     <div class="page-actions">
-        <a class="btn tecn-blue text-white" href="{{ url_for('scan') }}">Escanear</a>
-        <a class="btn btn-outline-primary" href="{{ url_for('kiosco') }}">Kiosco</a>
+        <a class="btn tecn-blue text-white" href="{{ url_for('asistencia.escanear') }}">Escanear</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('asistencia.kiosco') }}">Kiosco</a>
     </div>
 </section>
 
@@ -28,9 +28,9 @@
 {% endif %}
 
 <div class="quick-actions">
-    <a class="quick-action quick-action-primary" href="{{ url_for('scan') }}"><strong>Tomar asistencia</strong><span>Escaneo guiado con confirmacion visible.</span></a>
-    <a class="quick-action" href="{{ url_for('data') }}"><strong>Participantes</strong><span>Consulta listas y credenciales disponibles.</span></a>
-    <a class="quick-action" href="{{ url_for('reports') }}"><strong>Reportes</strong><span>Genera PDF o Excel por fecha y proyecto.</span></a>
+    <a class="quick-action quick-action-primary" href="{{ url_for('asistencia.escanear') }}"><strong>Tomar asistencia</strong><span>Escaneo guiado con confirmacion visible.</span></a>
+    <a class="quick-action" href="{{ url_for('participantes.datos') }}"><strong>Participantes</strong><span>Consulta listas y credenciales disponibles.</span></a>
+    <a class="quick-action" href="{{ url_for('reportes.reports') }}"><strong>Reportes</strong><span>Genera PDF o Excel por fecha y proyecto.</span></a>
 </div>
 
 <section class="card">

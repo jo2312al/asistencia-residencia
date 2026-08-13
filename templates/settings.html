@@ -10,9 +10,9 @@
     </div>
 </section>
 
-<div class="card shadow mb-4">
+<div class="card mb-4">
     <div class="card-body">
-        <form method="GET" action="{{ url_for('settings') }}" class="row g-3 align-items-end">
+        <form method="GET" action="{{ url_for('configuracion.configuracion') }}" class="row g-3 align-items-end">
             <div class="col-lg-8">
                 <label for="event_id" class="form-label">Evento de trabajo {{ tip('Todas las secciones de esta pantalla aplican al evento seleccionado.') }}</label>
                 <select class="form-select" id="event_id" name="event_id" required>
@@ -31,13 +31,13 @@
 
 <div class="row g-4">
     <div class="col-xl-7">
-        <div class="card shadow h-100">
+        <div class="card h-100">
             <div class="card-header">
                 <h2 class="h5 mb-0">Campos del evento {{ tip('Estos campos aparecen al registrar participantes manualmente o por Excel.') }}</h2>
             </div>
             <div class="card-body">
                 {% if selected_event %}
-                <form method="POST" action="{{ url_for('create_event_field') }}" class="row g-3 mb-4">
+                <form method="POST" action="{{ url_for('configuracion.crear_evento_campo') }}" class="row g-3 mb-4">
                     <input type="hidden" name="event_id" value="{{ selected_event[0] }}">
                     <div class="col-md-4">
                         <label for="name" class="form-label">Campo</label>
@@ -88,7 +88,7 @@
                                 <td>{{ field[3] }}</td>
                                 <td>{{ 'Si' if field[4] else 'No' }}</td>
                                 <td class="text-end">
-                                    <form method="POST" action="{{ url_for('delete_event_field', field_id=field[0]) }}">
+                                    <form method="POST" action="{{ url_for('configuracion.eliminar_evento_campo', field_id=field[0]) }}">
                                         <input type="hidden" name="event_id" value="{{ selected_event[0] }}">
                                         <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
                                     </form>
@@ -110,13 +110,13 @@
     </div>
 
     <div class="col-xl-5">
-        <div class="card shadow h-100">
+        <div class="card h-100">
             <div class="card-header">
                 <h2 class="h5 mb-0">Reglas de asistencia {{ tip('Controlan como se aceptan escaneos para este evento.') }}</h2>
             </div>
             <div class="card-body">
                 {% if selected_event %}
-                <form method="POST" action="{{ url_for('update_event_rules') }}" class="row g-3">
+                <form method="POST" action="{{ url_for('configuracion.actualizar_evento_reglas') }}" class="row g-3">
                     <input type="hidden" name="event_id" value="{{ selected_event[0] }}">
                     <div class="col-md-6">
                         <label for="duplicate_policy" class="form-label">Duplicados {{ tip('Evita registros repetidos o permite varios escaneos cuando el evento lo requiere.') }}</label>
@@ -148,13 +148,13 @@
 
 <div class="row g-4 mt-1">
     <div class="col-lg-12">
-        <div class="card shadow h-100">
+        <div class="card h-100">
             <div class="card-header">
                 <h2 class="h5 mb-0">Plantilla de credencial {{ tip('Define el formato visual de las credenciales del evento.') }}</h2>
             </div>
             <div class="card-body">
                 {% if selected_event and event_template %}
-                <form method="POST" action="{{ url_for('update_event_template') }}">
+                <form method="POST" action="{{ url_for('configuracion.actualizar_evento_plantilla') }}">
                     <input type="hidden" name="event_id" value="{{ selected_event[0] }}">
                     <div class="mb-3">
                         <label for="credential_style" class="form-label">Credencial</label>

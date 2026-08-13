@@ -1,15 +1,11 @@
-from io import BytesIO
+﻿from io import BytesIO
 import os
-import smtplib
 import unicodedata
 import uuid
 import zipfile
 from datetime import datetime
-from email.message import EmailMessage
 from functools import wraps
 from time import monotonic
-from concurrent.futures import ThreadPoolExecutor
-from threading import Lock
 from html import escape
 
 import mysql.connector
@@ -25,9 +21,17 @@ from reportlab.lib.units import inch
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from attendance_manager import AttendanceManager
-from database import DatabaseManager
-from qr_manager import QRManager
+from aplicacion.credenciales_pdf import (
+    construir_credencial_tarjeta,
+    construir_horizontal_credencial_tarjeta,
+    construir_horizontal_credenciales_pdf,
+    construir_estandar_credenciales_pdf,
+)
+from aplicacion.servicio_qr import ServicioCredencialesQR
+from attendance_manager import GestorAsistencia
+from database import GestorBaseDatos
+from qr_manager import GestorQR
+from infraestructura.correo import ServicioCorreo
 
 VALID_ROLES = ("adminsuperior", "admin", "staff", "guest")
 ROLES_EVENTOS_GLOBALES = {"adminsuperior", "admin"}
@@ -46,12 +50,14 @@ load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
 
 
 def str_to_bool(value, default=False):
+    """Ejecuta la operaciÃ³n str to bool y devuelve el resultado correspondiente."""
     if value is None:
         return default
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
-def get_db_config():
+def obtener_bd_configuracion():
+    """Ejecuta la operaciÃ³n obtener bd configuracion y devuelve el resultado correspondiente."""
     ssl_ca_path = os.getenv("DB_SSL_CA", os.path.join(BASE_DIR, "certs", "DigiCertGlobalRootCA.crt.pem"))
     config = {
         "user": os.getenv("DB_USER", "admin2312"),
@@ -66,31 +72,34 @@ def get_db_config():
     return config
 
 
-def get_role_home_endpoint(role):
+def obtener_rol_inicio_destino(role):
+    """Ejecuta la operaciÃ³n obtener rol inicio destino y devuelve el resultado correspondiente."""
     role_map = {
-        "adminsuperior": "dashboard_sistema",
-        "admin": "admin_dashboard",
-        "staff": "staff_dashboard",
-        "guest": "guest_dashboard",
+        "adminsuperior": "acceso.panel_sistema",
+        "admin": "acceso.admin_panel",
+        "staff": "acceso.staff_panel",
+        "guest": "acceso.guest_panel",
     }
-    return role_map.get(role, "guest_dashboard")
+    return role_map.get(role, "acceso.guest_panel")
 
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-change-me")
 
-db_config = get_db_config()
-db_manager = DatabaseManager(db_config)
+db_config = obtener_bd_configuracion()
+db_manager = GestorBaseDatos(db_config)
 
 BASE_REGISTRATION_FIELD_NAMES = {"nombre", "apellido paterno", "apellido materno", "matricula", "carrera"}
 
 
-def normalize_field_name(value):
+def normalizar_campo_nombre(value):
+    """Ejecuta la operaciÃ³n normalizar campo nombre y devuelve el resultado correspondiente."""
     text = unicodedata.normalize("NFD", value or "")
     return "".join(char for char in text if unicodedata.category(char) != "Mn").strip().lower()
 
 
-def get_mail_config():
+def obtener_correo_configuracion():
+    """Ejecuta la operaciÃ³n obtener correo configuracion y devuelve el resultado correspondiente."""
     server = os.getenv("MAIL_SERVER") or os.getenv("SMTP_HOST")
     username = os.getenv("MAIL_USERNAME") or os.getenv("SMTP_USER")
     password = os.getenv("MAIL_PASSWORD") or os.getenv("SMTP_PASSWORD")
@@ -106,47 +115,25 @@ def get_mail_config():
     }
 
 
-def send_mail(recipient, subject, body, attachments=None):
-    config = get_mail_config()
-    missing = [key for key in ("server", "username", "password", "sender") if not config.get(key)]
-    if missing:
-        raise RuntimeError("Configura SMTP en Azure: MAIL_SERVER, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD y MAIL_DEFAULT_SENDER")
-
-    message = EmailMessage()
-    message["From"] = config["sender"]
-    message["To"] = recipient
-    message["Subject"] = subject
-    message.set_content(body)
-
-    for path, filename in attachments or []:
-        with open(path, "rb") as attachment:
-            message.add_attachment(
-                attachment.read(),
-                maintype="image",
-                subtype="png",
-                filename=filename,
-            )
-
-    smtp_cls = smtplib.SMTP_SSL if config["use_ssl"] else smtplib.SMTP
-    with smtp_cls(config["server"], config["port"], timeout=30) as smtp:
-        if config["use_tls"] and not config["use_ssl"]:
-            smtp.starttls()
-        smtp.login(config["username"], config["password"])
-        smtp.send_message(message)
+def enviar_correo(recipient, subject, body, attachments=None):
+    """Ejecuta la operaciÃ³n enviar correo y devuelve el resultado correspondiente."""
+    return ServicioCorreo(obtener_correo_configuracion()).enviar(recipient, subject, body, attachments)
 
 
-def send_registered_credential_silently(event_id, project_id, participant_type, recipient_email, credential, qr_path, full_name, matricula):
+
+def enviar_registered_credencial_silenciosamente(event_id, project_id, participant_type, recipient_email, credential, qr_path, full_name, matricula):
+    """Ejecuta la operaciÃ³n enviar registered credencial silenciosamente y devuelve el resultado correspondiente."""
     if not event_id:
         return
 
     try:
-        event = db_manager.get_event(event_id)
+        event = db_manager.obtener_evento(event_id)
         if not event:
             return
 
         recipient = recipient_email
         if project_id and (participant_type or "").lower() != "asesor":
-            for row in db_manager.get_event_credential_rows(event_id):
+            for row in db_manager.obtener_evento_credencial_filas(event_id):
                 if row.get("project_id") == int(project_id) and (row.get("participant_type") or "").lower() == "asesor" and row.get("email"):
                     recipient = row["email"]
                     break
@@ -163,30 +150,41 @@ def send_registered_credential_silently(event_id, project_id, participant_type, 
             "Adjuntamos el QR para presentarlo en el registro de asistencia.\n"
         )
         filename = f"{matricula or credential['token']}.png"
-        send_mail(recipient, subject, body, [(qr_path, filename)])
-        db_manager.update_credentials_sent_status([credential["id"]], "sent")
-        db_manager.log_email(event_id, recipient, subject, "sent")
+        enviar_correo(recipient, subject, body, [(qr_path, filename)])
+        db_manager.actualizar_credenciales_sent_estado([credential["id"]], "sent")
+        db_manager.registrar_bitacora_correo(event_id, recipient, subject, "sent")
     except Exception as exc:
         try:
-            db_manager.update_credentials_sent_status([credential["id"]], "error")
-            db_manager.log_email(event_id, recipient_email or "sin destinatario", "Credencial", "error", str(exc))
+            db_manager.actualizar_credenciales_sent_estado([credential["id"]], "error")
+            db_manager.registrar_bitacora_correo(event_id, recipient_email or "sin destinatario", "Credencial", "error", str(exc))
         except Exception:
             pass
 
 
-qr_manager = QRManager()
-attendance_manager = AttendanceManager(db_manager)
-qr_background_executor = ThreadPoolExecutor(max_workers=int(os.getenv("QR_BACKGROUND_WORKERS", "2")))
-qr_background_submitted = set()
-qr_background_lock = Lock()
+qr_manager = GestorQR()
+attendance_manager = GestorAsistencia(db_manager)
+servicio_qr = ServicioCredencialesQR(
+    db_manager, qr_manager,
+    trabajadores=int(os.getenv("QR_BACKGROUND_WORKERS", "2")),
+    registrador=app.logger,
+)
 
+
+
+def url_publica(path):
+    """Ejecuta la operaciÃ³n url publica y devuelve el resultado correspondiente."""
+    base_url = os.getenv("PUBLIC_BASE_URL", "https://18-223-120-47.sslip.io:8080").rstrip("/")
+    return f"{base_url}{path}"
 
 
 def url_credencial_digital(token_credencial):
-    return url_for("credencial_digital", token_credencial=token_credencial, _external=True)
+    """Ejecuta la operaciÃ³n url credencial digital y devuelve el resultado correspondiente."""
+    path = url_for("participantes.credencial_digital", token_credencial=token_credencial)
+    return url_publica(path)
 
 
 def asegurar_url_digital_credencial(credencial):
+    """Ejecuta la operaciÃ³n asegurar url digital credencial y devuelve el resultado correspondiente."""
     token_credencial = credencial["token"]
     url_digital = url_credencial_digital(token_credencial)
     if credencial.get("digital_url") != url_digital:
@@ -195,6 +193,7 @@ def asegurar_url_digital_credencial(credencial):
 
 
 def ruta_publica_qr(ruta_qr):
+    """Ejecuta la operaciÃ³n ruta publica qr y devuelve el resultado correspondiente."""
     if not ruta_qr:
         return ""
     ruta_limpia = ruta_qr.replace("\\", "/")
@@ -202,252 +201,77 @@ def ruta_publica_qr(ruta_qr):
         return url_for("static", filename=ruta_limpia[len("static/"):])
     return f"/{ruta_limpia.lstrip('/')}"
 
-def ensure_credential_qr(credential):
-    token = credential["token"]
-    qr_path = credential.get("qr_path") or os.path.join("static/qr_codes", f"{token}.png").replace("\\", "/")
-    if not os.path.exists(qr_path):
-        qr_path = qr_manager.generate_qr_data(token, token)
-    if credential.get("qr_path") != qr_path:
-        db_manager.update_credential_qr_path(token, qr_path)
-    return qr_path
+def asegurar_credencial_qr(credential):
+    """Ejecuta la operaciÃ³n asegurar credencial qr y devuelve el resultado correspondiente."""
+    return servicio_qr.asegurar_credencial(credential)
 
 
-def ensure_student_qr(student, qr_tool=None):
-    active_qr_manager = qr_tool or qr_manager
-    matricula = student[4]
-    try:
-        credential = db_manager.ensure_student_participant_credential(student)
-        qr_path = credential.get("qr_path") or os.path.join("static/qr_codes", f"{credential['token']}.png").replace("\\", "/")
-        if not os.path.exists(qr_path):
-            qr_path = active_qr_manager.generate_qr_data(credential["token"], credential["token"])
-        if credential.get("qr_path") != qr_path:
-            db_manager.update_credential_qr_path(credential["token"], qr_path)
-        return qr_path, credential["token"], False
-    except Exception as e:
-        app.logger.exception("Falling back to legacy QR for %s: %s", matricula, e)
-        qr_path = os.path.join("static/qr_codes", f"{matricula}.png").replace("\\", "/")
-        if not os.path.exists(qr_path):
-            qr_path = active_qr_manager.generate_qr(matricula)
-        return qr_path, None, True
+
+def asegurar_participante_qr(student, qr_tool=None):
+    """Ejecuta la operaciÃ³n asegurar participante qr y devuelve el resultado correspondiente."""
+    return servicio_qr.asegurar_participante(student, qr_tool)
 
 
-def ensure_row_qr(row, qr_tool=None):
-    token = row.get("credential_token")
-    if token:
-        qr_path = row.get("qr_path") or os.path.join("static/qr_codes", f"{token}.png").replace("\\", "/")
-        if not os.path.exists(qr_path):
-            qr_path = (qr_tool or qr_manager).generate_qr_data(token, token)
-        if row.get("qr_path") != qr_path:
-            db_manager.update_credential_qr_path(token, qr_path)
-        return qr_path, token, False
 
-    student = (
-        row["id"],
-        row["first_name"],
-        row["last_name_p"],
-        row["last_name_m"],
-        row["matricula"],
-        row["carrera"],
-        row.get("project_id"),
-        row.get("event_id"),
-        row.get("participant_type") or "alumno",
-    )
-    return ensure_student_qr(student, qr_tool)
+def asegurar_fila_qr(row, qr_tool=None):
+    """Ejecuta la operaciÃ³n asegurar fila qr y devuelve el resultado correspondiente."""
+    return servicio_qr.asegurar_fila(row, qr_tool)
 
 
-def student_dict_to_tuple(student):
-    return (
-        student["id"], student["first_name"], student["last_name_p"], student["last_name_m"],
-        student["matricula"], student["carrera"], student.get("project_id"), student.get("event_id"),
-        student.get("participant_type") or "alumno", student.get("project_name"),
-    )
+
+def participante_dict_a_tuple(student):
+    """Ejecuta la operaciÃ³n student dict to tuple y devuelve el resultado correspondiente."""
+    return servicio_qr.diccionario_a_tupla(student)
 
 
-def queue_qr_generation(students):
-    for student in students:
-        if row_needs_qr(student):
-            submit_qr_generation(tuple(student[:9]))
+
+def encolar_qr_generacion(students):
+    """Ejecuta la operaciÃ³n encolar qr generacion y devuelve el resultado correspondiente."""
+    return servicio_qr.encolar(students)
 
 
-def row_needs_qr(student):
-    token = student[10] if len(student) > 10 else None
-    qr_path = student[11] if len(student) > 11 else None
-    return not token or not qr_path
+
+def fila_needs_qr(student):
+    """Ejecuta la operaciÃ³n row needs qr y devuelve el resultado correspondiente."""
+    return servicio_qr.necesita_qr(student)
 
 
-def submit_qr_generation(student):
-    key = student[0]
-    if not mark_qr_job_submitted(key):
-        return
-    future = qr_background_executor.submit(generate_student_qr_background, student)
-    future.add_done_callback(lambda _: unmark_qr_job_submitted(key))
+
+def enviar_qr_generacion(student):
+    """Ejecuta la operaciÃ³n enviar qr generacion y devuelve el resultado correspondiente."""
+    return servicio_qr.enviar_trabajo(student)
 
 
-def mark_qr_job_submitted(key):
-    with qr_background_lock:
-        if key in qr_background_submitted:
-            return False
-        qr_background_submitted.add(key)
-        return True
+
+def marcar_qr_trabajo_enviado(key):
+    """Ejecuta la operaciÃ³n marcar qr trabajo enviado y devuelve el resultado correspondiente."""
+    return servicio_qr.marcar_enviado(key)
 
 
-def unmark_qr_job_submitted(key):
-    with qr_background_lock:
-        qr_background_submitted.discard(key)
+
+def desmarcar_qr_trabajo_enviado(key):
+    """Ejecuta la operaciÃ³n desmarcar qr trabajo enviado y devuelve el resultado correspondiente."""
+    return servicio_qr.desmarcar_enviado(key)
 
 
-def generate_student_qr_background(student):
-    try:
-        ensure_student_qr(student, QRManager())
-    except Exception:
-        app.logger.exception("No se pudo generar QR en segundo plano para %s", student[0])
+
+def generar_participante_qr_segundo_plano(student):
+    """Ejecuta la operaciÃ³n generar participante qr segundo plano y devuelve el resultado correspondiente."""
+    return servicio_qr._generar_en_segundo_plano(student)
 
 
-def build_credential_card(student, styles, cell_width, cell_height):
-    logo_path = os.path.join(BASE_DIR, "static", "img", "logo.webp")
-    text_style = ParagraphStyle(
-        "CredentialText",
-        parent=styles["Normal"],
-        fontSize=8,
-        leading=10,
-        alignment=1,
-    )
-    name_style = ParagraphStyle(
-        "CredentialName",
-        parent=styles["Heading4"],
-        fontSize=11,
-        leading=13,
-        alignment=1,
-        textColor=colors.HexColor("#003087"),
-    )
-    label_style = ParagraphStyle(
-        "CredentialLabel",
-        parent=styles["Normal"],
-        fontSize=7,
-        leading=9,
-        alignment=1,
-        textColor=colors.HexColor("#6c757d"),
-    )
-
-    if os.path.exists(logo_path):
-        logo_cell = Image(logo_path, width=0.85 * inch, height=0.85 * inch)
-    else:
-        logo_cell = Paragraph("<b>AsisTec</b>", name_style)
-
-    qr_image = Image(student["qr_path"], width=1.65 * inch, height=1.65 * inch)
-    qr_image.hAlign = "CENTER"
-
-    content = [
-        [logo_cell],
-        [Paragraph("CREDENCIAL DE ACCESO", label_style)],
-        [Paragraph(student["name"], name_style)],
-        [Paragraph(student["project_name"], text_style)],
-        [Paragraph(f"Matricula: {student['matricula']}", text_style)],
-        [Spacer(1, 0.12 * inch)],
-        [qr_image],
-        [Paragraph("Presenta este codigo para registrar asistencia", label_style)],
-    ]
-    card = Table(content, colWidths=[cell_width - 0.25 * inch])
-    card.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 1), colors.HexColor("#f3f7fb")),
-                ("BOX", (0, 0), (-1, -1), 1.2, colors.HexColor("#003087")),
-                ("LINEBELOW", (0, 1), (-1, 1), 0.8, colors.HexColor("#d9e6f2")),
-                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ]
-        )
-    )
-    wrapper = Table([[card]], colWidths=[cell_width], rowHeights=[cell_height])
-    wrapper.setStyle(
-        TableStyle(
-            [
-                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ]
-        )
-    )
-    return wrapper
 
 
-def build_rectangular_credential_card(student, styles, card_width, card_height):
-    logo_path = os.path.join(BASE_DIR, "static", "img", "logo.webp")
-    text_style = ParagraphStyle(
-        "RectCredentialText",
-        parent=styles["Normal"],
-        fontSize=8,
-        leading=10,
-        textColor=colors.HexColor("#212529"),
-    )
-    name_style = ParagraphStyle(
-        "RectCredentialName",
-        parent=styles["Heading4"],
-        fontSize=13,
-        leading=15,
-        textColor=colors.HexColor("#003087"),
-    )
-    label_style = ParagraphStyle(
-        "RectCredentialLabel",
-        parent=styles["Normal"],
-        fontSize=7,
-        leading=9,
-        textColor=colors.HexColor("#6c757d"),
-    )
-
-    if os.path.exists(logo_path):
-        logo_cell = Image(logo_path, width=0.75 * inch, height=0.75 * inch)
-    else:
-        logo_cell = Paragraph("<b>AsisTec</b>", name_style)
-
-    qr_image = Image(student["qr_path"], width=1.25 * inch, height=1.25 * inch)
-    info = Table(
-        [
-            [Paragraph("CREDENCIAL DE ACCESO", label_style)],
-            [Paragraph(student["name"], name_style)],
-            [Paragraph(student["project_name"], text_style)],
-            [Paragraph(f"Matricula: {student['matricula']}", text_style)],
-            [Paragraph("Presenta este codigo para registrar asistencia", label_style)],
-        ],
-        colWidths=[card_width - 1.85 * inch],
-    )
-    info.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
-
-    card = Table(
-        [[logo_cell, info, qr_image]],
-        colWidths=[0.65 * inch, card_width - 1.85 * inch, 1.2 * inch],
-        rowHeights=[card_height],
-    )
-    card.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
-                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f3f7fb")),
-                ("BOX", (0, 0), (-1, -1), 1.2, colors.HexColor("#003087")),
-                ("LINEAFTER", (0, 0), (0, -1), 0.8, colors.HexColor("#d9e6f2")),
-                ("ALIGN", (0, 0), (0, -1), "CENTER"),
-                ("ALIGN", (2, 0), (2, -1), "CENTER"),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ]
-        )
-    )
-    return card
 
 
-def get_credential_students(qr_tool=None, event_id=None):
-    local_qr_manager = qr_tool or QRManager()
+
+def obtener_credencial_participantes(qr_tool=None, event_id=None):
+    """Ejecuta la operaciÃ³n obtener credencial participantes y devuelve el resultado correspondiente."""
+    local_qr_manager = qr_tool or GestorQR()
     student_data = []
-    for row in db_manager.get_students_for_credentials(event_id):
+    for row in db_manager.obtener_participantes_para_credenciales(event_id):
         matricula = row["matricula"]
-        qr_path, credential_token, is_legacy_qr = ensure_row_qr(row, local_qr_manager)
+        qr_path, credential_token, is_legacy_qr = asegurar_fila_qr(row, local_qr_manager)
         project_id = row.get("project_id")
         project_name = row.get("project_name") or "Sin proyecto"
         project_number = (project_id - 1) if project_id else None
@@ -469,7 +293,8 @@ def get_credential_students(qr_tool=None, event_id=None):
     return student_data
 
 
-def safe_filename(value, fallback="archivo"):
+def seguro_nombre_archivo(value, fallback="archivo"):
+    """Ejecuta la operaciÃ³n seguro nombre archivo y devuelve el resultado correspondiente."""
     text = unicodedata.normalize("NFD", str(value or ""))
     text = "".join(char for char in text if unicodedata.category(char) != "Mn")
     text = "".join(char if char.isalnum() else "_" for char in text.lower())
@@ -477,160 +302,78 @@ def safe_filename(value, fallback="archivo"):
     return text or fallback
 
 
-def ensure_report_dir():
+def asegurar_reporte_direccion():
+    """Ejecuta la operaciÃ³n asegurar reporte direccion y devuelve el resultado correspondiente."""
     report_dir = "static/reports"
     if not os.path.exists(report_dir):
         os.makedirs(report_dir)
     return report_dir
 
 
-def build_standard_credentials_pdf(student_data, output):
-    doc = SimpleDocTemplate(
-        output,
-        pagesize=letter,
-        leftMargin=0.5 * inch,
-        rightMargin=0.5 * inch,
-        topMargin=0.5 * inch,
-        bottomMargin=0.5 * inch,
-    )
-    elements = []
-    styles = getSampleStyleSheet()
-
-    page_width = letter[0]
-    page_height = letter[1]
-    margin = 0.5 * inch
-    usable_width = page_width - 2 * margin
-    usable_height = page_height - 2 * margin
-    cell_width = usable_width / 2
-    cell_height = usable_height / 2.5
-
-    for i in range(0, len(student_data), 4):
-        students_chunk = student_data[i:i + 4]
-        grid_data = [["", ""], ["", ""]]
-        for j, student in enumerate(students_chunk):
-            row = j // 2
-            col = j % 2
-            grid_data[row][col] = build_credential_card(student, styles, cell_width, cell_height)
-
-        table = Table(grid_data, colWidths=[cell_width, cell_width], rowHeights=[cell_height, cell_height])
-        table.setStyle(
-            TableStyle(
-                [
-                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                ]
-            )
-        )
-        elements.append(table)
-        if i + 4 < len(student_data):
-            elements.append(Spacer(1, 0.5 * inch))
-
-    doc.build(elements)
 
 
-def build_rectangular_credentials_pdf(student_data, output):
-    doc = SimpleDocTemplate(
-        output,
-        pagesize=letter,
-        leftMargin=0.45 * inch,
-        rightMargin=0.45 * inch,
-        topMargin=0.45 * inch,
-        bottomMargin=0.45 * inch,
-    )
-    elements = []
-    styles = getSampleStyleSheet()
-
-    page_width = letter[0]
-    page_height = letter[1]
-    margin = 0.45 * inch
-    usable_width = page_width - 2 * margin
-    usable_height = page_height - 2 * margin
-    card_width = usable_width / 2
-    card_height = 1.55 * inch
-
-    for i in range(0, len(student_data), 10):
-        chunk = student_data[i:i + 10]
-        rows = []
-        for j in range(0, len(chunk), 2):
-            left = build_rectangular_credential_card(chunk[j], styles, card_width - 0.08 * inch, card_height)
-            right = build_rectangular_credential_card(chunk[j + 1], styles, card_width - 0.08 * inch, card_height) if j + 1 < len(chunk) else ""
-            rows.append([left, right])
-
-        table = Table(rows, colWidths=[card_width, card_width], rowHeights=[usable_height / 5] * len(rows))
-        table.setStyle(
-            TableStyle(
-                [
-                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                    ("TOPPADDING", (0, 0), (-1, -1), 3),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-                ]
-            )
-        )
-        elements.append(table)
-        if i + 10 < len(student_data):
-            elements.append(Spacer(1, 0.2 * inch))
-
-    doc.build(elements)
 
 default_admin_username = os.getenv("ADMIN_USERNAME")
 default_admin_password = os.getenv("ADMIN_PASSWORD")
 if default_admin_username and default_admin_password:
     default_hash = generate_password_hash(default_admin_password, method="pbkdf2:sha256")
-    db_manager.ensure_user(default_admin_username, default_hash, role=os.getenv("ADMIN_ROLE", "adminsuperior"))
+    db_manager.asegurar_usuario(default_admin_username, default_hash, role=os.getenv("ADMIN_ROLE", "adminsuperior"))
 
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = "login"
+login_manager.login_view = "acceso.iniciar_sesion"
 
 
 class User(UserMixin):
     def __init__(self, username, role="guest"):
+        """Realiza internamente la operaciÃ³n init."""
         self.id = username
         self.role = role
 
     @property
-    def is_admin(self):
+    def es_admin(self):
+        """Ejecuta la operaciÃ³n is admin y devuelve el resultado correspondiente."""
         return self.role in ROLES_EVENTOS_GLOBALES
 
     @property
-    def is_adminsuperior(self):
+    def es_adminsuperior(self):
+        """Ejecuta la operaciÃ³n is adminsuperior y devuelve el resultado correspondiente."""
         return self.role == "adminsuperior"
 
     @property
-    def is_staff(self):
+    def es_staff(self):
+        """Ejecuta la operaciÃ³n is staff y devuelve el resultado correspondiente."""
         return self.role == "staff"
 
     @property
-    def is_guest(self):
+    def es_guest(self):
+        """Ejecuta la operaciÃ³n is guest y devuelve el resultado correspondiente."""
         return self.role == "guest"
 
 
-def role_required(*roles, api=False):
+def rol_requeridos(*roles, api=False):
+    """Ejecuta la operaciÃ³n role required y devuelve el resultado correspondiente."""
     def decorator(view_func):
+        """Ejecuta la operaciÃ³n decorator y devuelve el resultado correspondiente."""
         @wraps(view_func)
-        def wrapped(*args, **kwargs):
+        def envuelto(*args, **kwargs):
+            """Ejecuta la operaciÃ³n wrapped y devuelve el resultado correspondiente."""
             if current_user.role not in roles:
                 message = "No autorizado para esta accion"
                 if api or request.is_json:
                     return jsonify({"success": False, "error": message}), 403
                 flash(message, "warning")
-                return redirect(url_for("role_home"))
+                return redirect(url_for("acceso.rol_inicio"))
             return view_func(*args, **kwargs)
 
-        return wrapped
+        return envuelto
 
     return decorator
 
 
 @app.context_processor
-def inject_template_helpers():
+def inyectar_plantilla_auxiliares():
+    """Ejecuta la operaciÃ³n inyectar plantilla auxiliares y devuelve el resultado correspondiente."""
     return {
         "VALID_ROLES": VALID_ROLES,
         "ROLE_LABELS": ROLE_LABELS,
@@ -638,7 +381,8 @@ def inject_template_helpers():
     }
 
 
-def render_text_template(template, **values):
+def renderizar_texto_plantilla(template, **values):
+    """Ejecuta la operaciÃ³n renderizar texto plantilla y devuelve el resultado correspondiente."""
     text = template or ""
     for key, value in values.items():
         text = text.replace("{" + key + "}", str(value or ""))
@@ -646,6 +390,7 @@ def render_text_template(template, **values):
 
 
 def datetime_local_value(value):
+    """Ejecuta la operaciÃ³n datetime local value y devuelve el resultado correspondiente."""
     if not value:
         return ""
     if hasattr(value, "strftime"):
@@ -656,6 +401,7 @@ def datetime_local_value(value):
 
 
 def evento_permitido_para_usuario(event_id):
+    """Ejecuta la operaciÃ³n evento permitido para usuario y devuelve el resultado correspondiente."""
     event_id_normalizado = normalizar_evento_permiso(event_id)
     if current_user.role in ROLES_EVENTOS_GLOBALES:
         return True
@@ -665,6 +411,7 @@ def evento_permitido_para_usuario(event_id):
 
 
 def normalizar_evento_permiso(event_id):
+    """Ejecuta la operaciÃ³n normalizar evento permiso y devuelve el resultado correspondiente."""
     try:
         return int(event_id) if event_id else None
     except (TypeError, ValueError):
@@ -672,17 +419,20 @@ def normalizar_evento_permiso(event_id):
 
 
 def respuesta_evento_no_autorizado(api=False):
+    """Ejecuta la operaciÃ³n respuesta evento no autorizado y devuelve el resultado correspondiente."""
     mensaje = "No tienes permiso para consultar este evento"
     if api:
         return jsonify({"success": False, "error": mensaje}), 403
     flash(mensaje, "warning")
-    return redirect(url_for("role_home"))
+    return redirect(url_for("acceso.rol_inicio"))
 
 
 def evento_no_autorizado(event_id):
+    """Ejecuta la operaciÃ³n evento no autorizado y devuelve el resultado correspondiente."""
     return event_id and not evento_permitido_para_usuario(event_id)
 
-def filter_events_for_current_user(events):
+def filtrar_eventos_para_actual_usuario(events):
+    """Ejecuta la operaciÃ³n filtrar eventos para actual usuario y devuelve el resultado correspondiente."""
     if not current_user.is_authenticated:
         return []
     if current_user.role in ROLES_EVENTOS_GLOBALES:
@@ -692,721 +442,170 @@ def filter_events_for_current_user(events):
 
 
 def eventos_permitidos_usuario_actual():
+    """Ejecuta la operaciÃ³n eventos permitidos usuario actual y devuelve el resultado correspondiente."""
     if not current_user.is_authenticated:
         return set()
-    return set(db_manager.get_user_event_permissions(current_user.id))
+    return set(db_manager.obtener_usuario_evento_permisos(current_user.id))
 
 
 def usuario_operativo_sin_eventos():
+    """Ejecuta la operaciÃ³n usuario operativo sin eventos y devuelve el resultado correspondiente."""
     return current_user.role in ROLES_OPERATIVOS_POR_EVENTO and not eventos_permitidos_usuario_actual()
 
 
 @login_manager.user_loader
-def load_user(username):
-    user_data = db_manager.get_user(username)
+def cargar_usuario(username):
+    """Ejecuta la operaciÃ³n cargar usuario y devuelve el resultado correspondiente."""
+    user_data = db_manager.obtener_usuario(username)
     if user_data:
         return User(user_data[0], user_data[2] or "guest")
     return None
 
 
-@app.route("/")
-def index():
-    if current_user.is_authenticated:
-        return redirect(url_for("role_home"))
-    return redirect(url_for("login"))
 
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if current_user.is_authenticated:
-        return redirect(url_for("role_home"))
-    if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
-        user_data = db_manager.get_user(username)
-        if user_data and check_password_hash(user_data[1], password):
-            login_user(User(user_data[0], user_data[2] or "guest"))
-            return redirect(url_for("role_home"))
-        flash("Usuario o contrasena incorrectos", "danger")
-    return render_template("login.html")
 
 
-@app.route("/logout")
-@login_required
-def logout():
-    logout_user()
-    return redirect(url_for("login"))
 
 
-@app.route("/home")
-@login_required
-def role_home():
-    return redirect(url_for(get_role_home_endpoint(current_user.role)))
 
 
-@app.route("/dashboard")
-@login_required
-def dashboard():
-    return redirect(url_for("role_home"))
 
 
-@app.route("/sistema/dashboard")
-@login_required
-@role_required("adminsuperior")
-def dashboard_sistema():
-    return render_template(
-        "dashboard_sistema.html",
-        users=db_manager.get_all_users(),
-        events=db_manager.get_all_events(),
-        total_students=db_manager.get_total_students(),
-        total_attendance=db_manager.get_total_attendance(),
-    )
 
 
-@app.route("/admin/dashboard")
-@login_required
-@role_required("admin")
-def admin_dashboard():
-    latest_event = db_manager.get_latest_event()
-    latest_event_id = latest_event[0] if latest_event else None
-    projects = db_manager.get_projects_by_event(latest_event_id) if latest_event_id else []
-    resumen = resumen_evento_seguro(latest_event_id)
-    proyectos_asistencia = proyectos_asistencia_seguro(latest_event_id)
-    return render_template(
-        "admin_dashboard.html",
-        projects=projects,
-        latest_event=latest_event,
-        resumen=resumen,
-        proyectos_asistencia=proyectos_asistencia,
-        total_students=resumen["participantes"],
-        total_attendance=resumen["asistencias"],
-    )
 
 
-@app.route("/staff/dashboard")
-@login_required
-@role_required("staff")
-def staff_dashboard():
-    eventos = filter_events_for_current_user(db_manager.get_active_events())
-    latest_event = eventos[0] if eventos else None
-    latest_event_id = latest_event[0] if latest_event else None
-    projects = db_manager.get_projects_by_event(latest_event_id) if latest_event_id else []
-    return render_template(
-        "staff_dashboard.html",
-        projects=projects,
-        latest_event=latest_event,
-        resumen=resumen_evento_seguro(latest_event_id),
-    )
 
 
-@app.route("/guest/dashboard")
-@login_required
-@role_required("guest")
-def guest_dashboard():
-    return render_template("guest_dashboard.html")
 
 
-@app.route("/create_user", methods=["GET", "POST"])
-@login_required
-@role_required("adminsuperior", "admin")
-def create_user():
-    if request.method == "POST":
-        try:
-            username = request.form.get("username")
-            password = request.form.get("password")
-            role = request.form.get("role", "guest")
-            if not username or not password:
-                return jsonify({"success": False, "error": "Usuario y contrasena son requeridos"}), 400
-
-            if db_manager.get_user(username):
-                return jsonify({"success": False, "error": "El usuario ya existe"}), 400
-
-            hashed_password = generate_password_hash(password, method="pbkdf2:sha256")
-            db_manager.add_user(username, hashed_password, role=role)
-            return jsonify({"success": True, "message": "Usuario creado exitosamente"})
-        except ValueError as e:
-            return jsonify({"success": False, "error": str(e)}), 400
-        except Exception as e:
-            return jsonify({"success": False, "error": str(e)}), 500
-    users = db_manager.get_all_users()
-    event_permissions = {user[0]: db_manager.get_user_event_permissions(user[0]) for user in users}
-    return render_template(
-        "create_user.html",
-        roles=VALID_ROLES,
-        users=users,
-        events=db_manager.get_all_events(),
-        event_permissions=event_permissions,
-    )
 
 
-@app.route("/users/<path:username>/role", methods=["POST"])
-@login_required
-@role_required("adminsuperior", "admin", api=True)
-def update_user_role(username):
-    try:
-        if username == current_user.id:
-            return jsonify({"success": False, "error": "No puedes cambiar tu propio rol"}), 400
-
-        role = request.form.get("role")
-        if request.is_json:
-            payload = request.get_json(silent=True) or {}
-            role = payload.get("role", role)
-
-        if not role:
-            return jsonify({"success": False, "error": "Rol requerido"}), 400
-
-        updated = db_manager.update_user_role(username, role)
-        if not updated:
-            return jsonify({"success": False, "error": "Usuario no encontrado"}), 404
-        return jsonify({"success": True, "message": "Rol actualizado correctamente"})
-    except PermissionError as e:
-        return jsonify({"success": False, "error": str(e)}), 403
-    except ValueError as e:
-        return jsonify({"success": False, "error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route("/users/<path:username>/events", methods=["POST"])
-@login_required
-@role_required("adminsuperior", "admin")
-def update_user_events(username):
-    if not db_manager.get_user(username):
-        flash("Usuario no encontrado", "warning")
-        return redirect(url_for("create_user"))
-    event_ids = [int(event_id) for event_id in request.form.getlist("event_ids") if event_id.isdigit()]
-    try:
-        db_manager.set_user_event_permissions(username, event_ids)
-        flash("Permisos por evento actualizados", "success")
-    except Exception as e:
-        flash(str(e), "danger")
-    return redirect(url_for("create_user"))
 
 
-def normalize_datetime_input(value):
+def normalizar_fecha_hora_entrada(value):
+    """Ejecuta la operaciÃ³n normalizar fecha hora entrada y devuelve el resultado correspondiente."""
     if not value:
         return None
     return value.replace("T", " ")
 
 
-@app.route("/events")
-@login_required
-@role_required("admin")
-def events():
-    eventos = db_manager.get_all_events()
-    return render_template(
-        "events.html",
-        events=eventos,
-        projects=db_manager.get_all_projects(),
-        active_event_count=sum(1 for event in eventos if event[6] == "active"),
-    )
 
 
-@app.route("/events", methods=["POST"])
-@login_required
-@role_required("admin")
-def create_event():
-    name = (request.form.get("name") or "").strip()
-    description = (request.form.get("description") or "").strip() or None
-    start_datetime = normalize_datetime_input(request.form.get("start_datetime"))
-    end_datetime = normalize_datetime_input(request.form.get("end_datetime"))
-    location = (request.form.get("location") or "").strip() or None
-    status = request.form.get("status") or "active"
-    event_type = request.form.get("event_type") or "general"
-    duplicate_policy = request.form.get("duplicate_policy") or "once_per_day"
-    selected_fields = request.form.getlist("event_fields")
-    custom_field = (request.form.get("custom_field") or "").strip()
-
-    if not name:
-        flash("Nombre del evento requerido", "danger")
-        return redirect(url_for("events"))
-
-    try:
-        event_id = db_manager.add_event(
-            name,
-            description,
-            start_datetime,
-            end_datetime,
-            location,
-            status,
-            event_type,
-            duplicate_policy,
-        )
-        field_options = {
-            "email": ("Correo", "email", True),
-            "telefono": ("Telefono", "tel", False),
-            "equipo": ("Equipo", "text", False),
-            "categoria": ("Categoria", "text", False),
-            "institucion": ("Institucion", "text", False),
-            "rfc": ("RFC", "text", False),
-        }
-        for order, field_key in enumerate(selected_fields, start=1):
-            if field_key in field_options:
-                field_name, field_type, is_required = field_options[field_key]
-                db_manager.add_event_field(event_id, field_name, field_type, is_required, order)
-        if custom_field:
-            db_manager.add_event_field(event_id, custom_field, "text", False, len(selected_fields) + 1)
-        flash("Evento creado correctamente", "success")
-    except Exception as e:
-        flash(str(e), "danger")
-    return redirect(url_for("events"))
 
 
-@app.route("/events/<int:event_id>")
-@login_required
-@role_required("admin")
-def event_detail(event_id):
-    event = db_manager.get_event(event_id)
-    if not event:
-        flash("Evento no encontrado", "warning")
-        return redirect(url_for("events" if current_user.role == "admin" else "staff_dashboard"))
-
-    participants = db_manager.get_all_students_filtered(event_id_filter=event_id)
-    custom_values = db_manager.get_field_values_by_student_ids([student[0] for student in participants])
-    projects = db_manager.get_projects_by_event(event_id)
-    project_names = {project[0]: project[1] for project in projects}
-    participant_rows = []
-    for student in participants:
-        detail = db_manager.get_student_by_id(student[0]) or {}
-        participant_rows.append({
-            "id": student[0],
-            "first_name": student[1],
-            "last_name_p": student[2],
-            "last_name_m": student[3],
-            "matricula": student[4],
-            "carrera": student[5],
-            "project_id": student[6],
-            "event_id": student[7],
-            "participant_type": student[8],
-            "project_name": project_names.get(student[6], "Sin proyecto"),
-            "email": detail.get("email") or "",
-            "custom_fields": custom_values.get(student[0], []),
-        })
-
-    try:
-        counts = db_manager.get_event_counts(event_id)
-    except Exception:
-        counts = {
-            "participants": len(participant_rows),
-            "projects": len(projects),
-            "attendance": 0,
-            "credentials": 0,
-        }
-    try:
-        email_logs = db_manager.get_event_email_logs(event_id)
-    except Exception:
-        email_logs = []
-    try:
-        attendance_events = db_manager.get_event_attendance_events(event_id)
-    except Exception:
-        attendance_events = []
-
-    return render_template(
-        "event_detail.html",
-        event=event,
-        projects=projects,
-        participants=participant_rows,
-        counts=counts,
-        email_logs=email_logs,
-        attendance_events=attendance_events,
-    )
 
 
-@app.route("/events/<int:event_id>/edit", methods=["POST"])
-@login_required
-@role_required("admin")
-def update_event(event_id):
-    name = (request.form.get("name") or "").strip()
-    if not name:
-        flash("Nombre del evento requerido", "danger")
-        return redirect(url_for("event_detail", event_id=event_id))
-
-    try:
-        updated = db_manager.update_event(
-            event_id,
-            name,
-            (request.form.get("description") or "").strip() or None,
-            normalize_datetime_input(request.form.get("start_datetime")),
-            normalize_datetime_input(request.form.get("end_datetime")),
-            (request.form.get("location") or "").strip() or None,
-            request.form.get("status") or "active",
-            request.form.get("event_type") or "general",
-            request.form.get("duplicate_policy") or "once_per_day",
-        )
-        flash("Evento actualizado" if updated else "Evento sin cambios", "success")
-    except Exception as e:
-        flash(str(e), "danger")
-    return redirect(url_for("event_detail", event_id=event_id))
 
 
-@app.route("/participants/<path:student_id>/edit", methods=["POST"])
-@login_required
-@role_required("admin")
-def update_participant(student_id):
-    student = db_manager.get_student_by_id(student_id)
-    if not student:
-        flash("Participante no encontrado", "warning")
-        return redirect(url_for("data"))
-
-    event_id = student.get("event_id")
-    project_id = request.form.get("project_id") or None
-    try:
-        if project_id:
-            valid_project_ids = {str(project[0]) for project in db_manager.get_projects_by_event(event_id)}
-            if str(project_id) not in valid_project_ids:
-                flash("Proyecto no pertenece al evento", "danger")
-                return redirect(url_for("event_detail", event_id=event_id))
-
-        db_manager.update_student_participant(
-            student_id,
-            (request.form.get("first_name") or "").strip(),
-            (request.form.get("last_name_p") or "").strip(),
-            (request.form.get("last_name_m") or "").strip(),
-            (request.form.get("matricula") or "").strip(),
-            (request.form.get("carrera") or "").strip(),
-            project_id,
-            (request.form.get("email") or "").strip() or None,
-            request.form.get("participant_type") or "alumno",
-        )
-        flash("Participante actualizado", "success")
-    except mysql.connector.Error as e:
-        if e.errno == 1062:
-            flash("La matricula ya existe en otro participante", "danger")
-        else:
-            flash("Error al actualizar participante", "danger")
-    except Exception as e:
-        flash(str(e), "danger")
-    return redirect(url_for("event_detail", event_id=event_id))
 
 
-@app.route("/projects", methods=["POST"])
-@login_required
-@role_required("admin")
-def create_project():
-    name = (request.form.get("name") or "").strip()
-    description = (request.form.get("description") or "").strip() or None
-    event_id = request.form.get("event_id", type=int)
-
-    if not name:
-        flash("Nombre del proyecto requerido", "danger")
-        return redirect(url_for("events"))
-
-    try:
-        db_manager.add_project(name, description, event_id)
-        flash("Proyecto agregado correctamente", "success")
-    except mysql.connector.Error as e:
-        if e.errno == 1062:
-            flash("Ya existe un proyecto con ese nombre", "warning")
-        else:
-            flash("Error al crear proyecto", "danger")
-    except Exception as e:
-        flash(str(e), "danger")
-    return redirect(url_for("events"))
 
 
-@app.route("/register")
-@login_required
-@role_required("admin")
-def register():
-    events = db_manager.get_active_events()
-    return render_template("register.html", events=events)
 
 
-@app.route("/settings")
-@login_required
-@role_required("admin")
-def settings():
-    events = db_manager.get_all_events()
-    selected_event_id = request.args.get("event_id", type=int)
-    selected_event = None
-    event_fields = []
-
-    if selected_event_id:
-        selected_event = db_manager.get_event(selected_event_id)
-        if selected_event:
-            event_fields = db_manager.get_event_fields(selected_event_id)
-        else:
-            flash("Evento no encontrado", "warning")
-
-    mail_config = get_mail_config()
-    mail_status = {
-        "server": mail_config.get("server") or "",
-        "port": mail_config.get("port"),
-        "username": mail_config.get("username") or "",
-        "sender": mail_config.get("sender") or "",
-        "use_tls": mail_config.get("use_tls"),
-        "use_ssl": mail_config.get("use_ssl"),
-        "is_ready": not [key for key in ("server", "username", "password", "sender") if not mail_config.get(key)],
-    }
-
-    return render_template(
-        "settings.html",
-        events=events,
-        selected_event=selected_event,
-        selected_event_id=selected_event_id,
-        event_fields=event_fields,
-        event_template=db_manager.get_event_template(selected_event_id) if selected_event else None,
-        mail_status=mail_status,
-        system_info={
-            "app_name": "AsisTec",
-            "database": db_config.get("database"),
-            "environment": os.getenv("FLASK_ENV") or os.getenv("ENVIRONMENT") or "production",
-        },
-    )
 
 
-@app.route("/settings/event-fields", methods=["POST"])
-@login_required
-@role_required("admin")
-def create_event_field():
-    event_id = request.form.get("event_id", type=int)
-    name = (request.form.get("name") or "").strip()
-    field_type = request.form.get("field_type") or "text"
-    is_required = request.form.get("is_required") == "on"
-    display_order = request.form.get("display_order", 0, type=int)
-
-    if not event_id or not name:
-        flash("Evento y nombre del campo son requeridos", "danger")
-        return redirect(url_for("settings", event_id=event_id or ""))
-
-    try:
-        db_manager.add_event_field(event_id, name, field_type, is_required, display_order)
-        flash("Campo agregado correctamente", "success")
-    except Exception as e:
-        flash(str(e), "danger")
-    return redirect(url_for("settings", event_id=event_id))
 
 
-@app.route("/settings/event-fields/<int:field_id>/delete", methods=["POST"])
-@login_required
-@role_required("admin")
-def delete_event_field(field_id):
-    event_id = request.form.get("event_id", type=int)
-    try:
-        deleted = db_manager.delete_event_field(field_id)
-        flash("Campo eliminado" if deleted else "Campo no encontrado", "success" if deleted else "warning")
-    except Exception as e:
-        flash(str(e), "danger")
-    return redirect(url_for("settings", event_id=event_id or ""))
 
 
-@app.route("/settings/event-rules", methods=["POST"])
-@login_required
-@role_required("admin")
-def update_event_rules():
-    event_id = request.form.get("event_id", type=int)
-    duplicate_policy = request.form.get("duplicate_policy") or "once_per_day"
-    status = request.form.get("status") or None
-
-    if not event_id:
-        flash("Selecciona un evento para actualizar reglas", "danger")
-        return redirect(url_for("settings"))
-
-    try:
-        updated = db_manager.update_event_rules(event_id, duplicate_policy, status)
-        flash("Reglas actualizadas" if updated else "Evento no encontrado", "success" if updated else "warning")
-    except Exception as e:
-        flash(str(e), "danger")
-    return redirect(url_for("settings", event_id=event_id))
 
 
-@app.route("/settings/event-template", methods=["POST"])
-@login_required
-@role_required("admin")
-def update_event_template():
-    event_id = request.form.get("event_id", type=int)
-    if not event_id or not db_manager.get_event(event_id):
-        flash("Selecciona un evento valido para guardar plantilla", "danger")
-        return redirect(url_for("settings"))
-    try:
-        db_manager.save_event_template(
-            event_id,
-            (request.form.get("email_subject") or "").strip() or "Credenciales para {event_name}",
-            request.form.get("email_body") or "",
-            request.form.get("credential_style") or "standard",
-            (request.form.get("logo_filename") or "").strip() or None,
-        )
-        flash("Plantilla actualizada", "success")
-    except Exception as e:
-        flash(str(e), "danger")
-    return redirect(url_for("settings", event_id=event_id))
 
 
-@app.route("/settings/project-fields", methods=["POST"])
-@login_required
-@role_required("admin")
-def create_project_field():
-    project_id = request.form.get("project_id", type=int)
-    flash("Los campos ahora se administran por evento.", "warning")
-    return redirect(url_for("settings"))
 
 
-@app.route("/settings/project-fields/<int:field_id>/delete", methods=["POST"])
-@login_required
-@role_required("admin")
-def delete_project_field(field_id):
-    flash("Los campos ahora se administran por evento.", "warning")
-    return redirect(url_for("settings"))
 
 
-@app.route("/project_fields/<int:project_id>")
-@login_required
-@role_required("admin", api=True)
-def project_fields_api(project_id):
-    if not db_manager.get_project(project_id):
-        return jsonify({"success": False, "error": "Proyecto no encontrado"}), 404
-
-    return jsonify({
-        "success": True,
-        "fields": db_manager.get_project_fields_as_dicts(project_id),
-    })
 
 
-@app.route("/event_fields/<int:event_id>")
-@login_required
-@role_required("admin", api=True)
-def event_fields_api(event_id):
-    if not db_manager.get_event(event_id):
-        return jsonify({"success": False, "error": "Evento no encontrado"}), 404
-
-    fields = [
-        field
-        for field in db_manager.get_event_fields_as_dicts(event_id)
-        if normalize_field_name(field["name"]) not in BASE_REGISTRATION_FIELD_NAMES
-    ]
-    return jsonify({
-        "success": True,
-        "fields": fields,
-    })
 
 
-@app.route("/event_projects/<int:event_id>")
-@login_required
-@role_required("admin", "staff", api=True)
-def event_projects_api(event_id):
-    if evento_no_autorizado(event_id):
-        return respuesta_evento_no_autorizado(api=True)
-    if not db_manager.get_event(event_id):
-        return jsonify({"success": False, "error": "Evento no encontrado"}), 404
-
-    projects = db_manager.get_projects_by_event(event_id)
-    return jsonify({
-        "success": True,
-        "projects": [{"id": p[0], "name": p[1]} for p in projects],
-    })
 
 
-@app.route("/scan")
-@login_required
-@role_required("admin", "staff")
-def scan():
-    events = filter_events_for_current_user(db_manager.get_active_events())
-    return render_template("scan.html", events=events, scanner_locked=usuario_operativo_sin_eventos())
 
 
-@app.route("/kiosco")
-@login_required
-@role_required("admin", "staff")
-def kiosco():
-    events = filter_events_for_current_user(db_manager.get_active_events())
-    return render_template("kiosco.html", events=events, scanner_locked=usuario_operativo_sin_eventos())
 
 
-@app.route("/proyectos/<int:project_id>/asistencia")
-@login_required
-@role_required("admin", "staff")
-def asistencia_proyecto(project_id):
-    event_id = request.args.get("event_id", type=int)
-    project = db_manager.get_project(project_id)
-    if not project:
-        flash("Proyecto no encontrado", "warning")
-        return redirect(url_for("data"))
-    event_id = event_id or event_id_desde_proyecto(project)
-    if evento_no_autorizado(event_id):
-        return respuesta_evento_no_autorizado()
-    rows = db_manager.detalle_asistencia_proyecto(event_id, project_id) if event_id else []
-    return render_template("project_checkin.html", project=project, event_id=event_id, rows=rows)
 
 
-def event_id_desde_proyecto(project):
+def evento_id_desde_proyecto(project):
+    """Ejecuta la operaciÃ³n event id desde proyecto y devuelve el resultado correspondiente."""
     return project[4] if len(project) > 4 else None
 
 
 def resumen_evento_seguro(event_id):
+    """Ejecuta la operaciÃ³n resumen evento seguro y devuelve el resultado correspondiente."""
     if not event_id:
         return resumen_evento_vacio()
     return db_manager.resumen_ejecutivo_evento(event_id)
 
 
 def proyectos_asistencia_seguro(event_id):
+    """Ejecuta la operaciÃ³n proyectos asistencia seguro y devuelve el resultado correspondiente."""
     return db_manager.proyectos_con_asistencia(event_id) if event_id else []
 
 
 def resumen_evento_vacio():
+    """Ejecuta la operaciÃ³n resumen evento vacio y devuelve el resultado correspondiente."""
     return {"participantes": 0, "asistencias": 0, "presentes": 0, "pendientes": 0, "porcentaje": 0, "alumnos": 0, "asesores": 0, "hora_pico": "Sin registros"}
 
 
-@app.route("/reports")
-@login_required
-@role_required("admin", "staff")
-def reports():
-    events = filter_events_for_current_user(db_manager.get_all_events())
-    return render_template("reports.html", projects=[], events=events)
 
 
-@app.route("/data")
-@login_required
-@role_required("admin", "staff")
-def data():
-    filters = get_participant_filters()
-    if evento_no_autorizado(filters["event_id_filter"]):
-        return respuesta_evento_no_autorizado()
-    page_data = get_participant_page(filters)
-    context = build_data_context(filters, page_data)
-    return render_template("data.html", **context)
 
 
-def get_participant_filters():
+def obtener_participante_filtros():
+    """Ejecuta la operaciÃ³n obtener participante filtros y devuelve el resultado correspondiente."""
     return {
         "matricula_search": request.args.get("matricula", "").strip(),
         "apellido_p_search": request.args.get("apellido_p", "").strip(),
         "project_id_filter": request.args.get("project_id", ""),
         "event_id_filter": request.args.get("event_id", ""),
-        "sort_by": valid_sort(request.args.get("sort", "proyecto")),
-        "sort_dir": valid_sort_dir(request.args.get("dir", "asc")),
+        "sort_by": valido_orden(request.args.get("sort", "proyecto")),
+        "sort_dir": valido_orden_direccion(request.args.get("dir", "asc")),
         "show_details": request.args.get("details") == "1",
         "page": request.args.get("page", 1, type=int),
         "per_page": 10,
     }
 
 
-def valid_sort(sort_by):
+def valido_orden(sort_by):
+    """Ejecuta la operaciÃ³n valido orden y devuelve el resultado correspondiente."""
     allowed = {"matricula", "nombre", "apellido_p", "apellido_m", "carrera", "tipo", "proyecto"}
     return sort_by if sort_by in allowed else "proyecto"
 
 
-def valid_sort_dir(sort_dir):
+def valido_orden_direccion(sort_dir):
+    """Ejecuta la operaciÃ³n valido orden direccion y devuelve el resultado correspondiente."""
     return sort_dir if sort_dir in {"asc", "desc"} else "asc"
 
 
-def get_participant_page(filters):
+def obtener_participante_pagina(filters):
+    """Ejecuta la operaciÃ³n obtener participante pagina y devuelve el resultado correspondiente."""
     page = max(1, filters["page"])
-    rows, total = fetch_filtered_students_page(filters, page)
+    rows, total = consultar_filtrados_participantes_pagina(filters, page)
     if not rows and page > 1:
-        total = count_filtered_students(filters)
+        total = contar_filtrados_participantes(filters)
         page = max(1, min(page, max((total + filters["per_page"] - 1) // filters["per_page"], 1)))
-        rows, total = fetch_filtered_students_page(filters, page)
+        rows, total = consultar_filtrados_participantes_pagina(filters, page)
     total_pages = max((total + filters["per_page"] - 1) // filters["per_page"], 1)
     return {"rows": rows, "page": page, "total_pages": total_pages, "total": total}
 
 
-def count_filtered_students(filters):
+def contar_filtrados_participantes(filters):
+    """Ejecuta la operaciÃ³n contar filtrados participantes y devuelve el resultado correspondiente."""
     if not filters["event_id_filter"]:
         return 0
-    return db_manager.count_students_filtered(*student_filter_args(filters))
+    return db_manager.contar_participantes_filtrados(*participante_filtrar_argumentos(filters))
 
 
-def student_filter_args(filters):
+def participante_filtrar_argumentos(filters):
+    """Ejecuta la operaciÃ³n participante filtrar argumentos y devuelve el resultado correspondiente."""
     return (
         filters["matricula_search"],
         filters["apellido_p_search"],
@@ -1415,12 +614,13 @@ def student_filter_args(filters):
     )
 
 
-def fetch_filtered_students(filters, page):
+def consultar_filtrados_participantes(filters, page):
+    """Ejecuta la operaciÃ³n consultar filtrados participantes y devuelve el resultado correspondiente."""
     if not filters["event_id_filter"]:
         return []
     offset = (page - 1) * filters["per_page"]
-    return db_manager.get_all_students_filtered(
-        *student_filter_args(filters),
+    return db_manager.obtener_todos_participantes_filtrados(
+        *participante_filtrar_argumentos(filters),
         filters["sort_by"],
         filters["sort_dir"],
         filters["per_page"],
@@ -1428,12 +628,13 @@ def fetch_filtered_students(filters, page):
     )
 
 
-def fetch_filtered_students_page(filters, page):
+def consultar_filtrados_participantes_pagina(filters, page):
+    """Ejecuta la operaciÃ³n consultar filtrados participantes pagina y devuelve el resultado correspondiente."""
     if not filters["event_id_filter"]:
         return [], 0
     offset = (page - 1) * filters["per_page"]
-    return db_manager.get_students_filtered_page(
-        *student_filter_args(filters),
+    return db_manager.obtener_participantes_filtrados_pagina(
+        *participante_filtrar_argumentos(filters),
         filters["sort_by"],
         filters["sort_dir"],
         filters["per_page"],
@@ -1441,35 +642,40 @@ def fetch_filtered_students_page(filters, page):
     )
 
 
-def build_data_context(filters, page_data):
-    projects = cached_projects_by_event(filters["event_id_filter"]) if filters["event_id_filter"] else []
-    queue_qr_generation(page_data["rows"])
-    students = build_student_rows(page_data["rows"], projects, filters["show_details"])
+def construir_datos_contexto(filters, page_data):
+    """Ejecuta la operaciÃ³n construir datos contexto y devuelve el resultado correspondiente."""
+    projects = cached_proyectos_por_evento(filters["event_id_filter"]) if filters["event_id_filter"] else []
+    encolar_qr_generacion(page_data["rows"])
+    students = construir_participante_filas(page_data["rows"], projects, filters["show_details"])
     return {
         "students": students,
         "projects": projects,
-        "events": filter_events_for_current_user(cached_all_events()),
+        "events": filtrar_eventos_para_actual_usuario(cached_all_events()),
         "page": page_data["page"],
         "total_pages": page_data["total_pages"],
         "total_students": page_data["total"],
-        "selected_event": cached_event(filters["event_id_filter"]) if filters["event_id_filter"] else None,
+        "selected_event": cached_evento(filters["event_id_filter"]) if filters["event_id_filter"] else None,
         **filters,
     }
 
 
 def cached_all_events():
-    return cached_metadata("events:all", db_manager.get_all_events)
+    """Ejecuta la operaciÃ³n cached all events y devuelve el resultado correspondiente."""
+    return cached_metadata("events:all", db_manager.obtener_todos_eventos)
 
 
-def cached_projects_by_event(event_id):
-    return cached_metadata(f"projects:{event_id}", lambda: db_manager.get_projects_by_event(event_id))
+def cached_proyectos_por_evento(event_id):
+    """Ejecuta la operaciÃ³n cached projects by event y devuelve el resultado correspondiente."""
+    return cached_metadata(f"projects:{event_id}", lambda: db_manager.obtener_proyectos_por_evento(event_id))
 
 
-def cached_event(event_id):
-    return cached_metadata(f"event:{event_id}", lambda: db_manager.get_event(event_id))
+def cached_evento(event_id):
+    """Ejecuta la operaciÃ³n cached event y devuelve el resultado correspondiente."""
+    return cached_metadata(f"event:{event_id}", lambda: db_manager.obtener_evento(event_id))
 
 
 def cached_metadata(key, loader):
+    """Ejecuta la operaciÃ³n cached metadata y devuelve el resultado correspondiente."""
     cached = DATA_METADATA_CACHE.get(key)
     now = monotonic()
     if cached and now - cached["time"] < DATA_CACHE_TTL_SECONDS:
@@ -1479,20 +685,23 @@ def cached_metadata(key, loader):
     return value
 
 
-def build_student_rows(students, projects, include_details=False):
-    custom_values = get_custom_values_for_rows(students, include_details)
+def construir_participante_filas(students, projects, include_details=False):
+    """Ejecuta la operaciÃ³n construir participante filas y devuelve el resultado correspondiente."""
+    custom_values = obtener_personalizados_valores_para_filas(students, include_details)
     project_names = {project[0]: project[1] for project in projects}
-    return [build_student_row(student, custom_values, project_names) for student in students]
+    return [construir_participante_fila(student, custom_values, project_names) for student in students]
 
 
-def get_custom_values_for_rows(students, include_details):
+def obtener_personalizados_valores_para_filas(students, include_details):
+    """Ejecuta la operaciÃ³n obtener personalizados valores para filas y devuelve el resultado correspondiente."""
     if not include_details:
         return {}
-    return db_manager.get_field_values_by_student_ids([student[0] for student in students])
+    return db_manager.obtener_campo_valores_por_participante_ids([student[0] for student in students])
 
 
-def build_student_row(student, custom_values, project_names):
-    credential_token, qr_path = student_existing_credential(student)
+def construir_participante_fila(student, custom_values, project_names):
+    """Ejecuta la operaciÃ³n construir participante fila y devuelve el resultado correspondiente."""
+    credential_token, qr_path = participante_existente_credencial(student)
     return {
         "id": student[0],
         "first_name": student[1],
@@ -1503,7 +712,7 @@ def build_student_row(student, custom_values, project_names):
         "project_id": student[6],
         "event_id": student[7] if len(student) > 7 else None,
         "participant_type": student[8] if len(student) > 8 else "alumno",
-        "project_name": student_project_name(student, project_names),
+        "project_name": participante_proyecto_nombre(student, project_names),
         "credential_token": credential_token or "Legacy",
         "is_legacy_qr": not credential_token,
         "qr_path": qr_path,
@@ -1511,7 +720,8 @@ def build_student_row(student, custom_values, project_names):
     }
 
 
-def student_existing_credential(student):
+def participante_existente_credencial(student):
+    """Ejecuta la operaciÃ³n student existing credential y devuelve el resultado correspondiente."""
     token = student[10] if len(student) > 10 else None
     qr_path = student[11] if len(student) > 11 else None
     if token and not qr_path:
@@ -1521,57 +731,24 @@ def student_existing_credential(student):
     return token, qr_path
 
 
-def student_project_name(student, project_names):
+def participante_proyecto_nombre(student, project_names):
+    """Ejecuta la operaciÃ³n student project name y devuelve el resultado correspondiente."""
     if len(student) > 9 and student[9]:
         return student[9]
     return project_names.get(student[6])
 
 
-@app.route("/participants/<path:student_id>/credential.pdf")
-@login_required
-@role_required("admin", "staff")
-def download_student_credential_pdf(student_id):
-    return download_student_credential(student_id, "standard")
-
-
-@app.route("/participants/<path:student_id>/credential_horizontal.pdf")
-@login_required
-@role_required("admin", "staff")
-def download_student_credential_rect_pdf(student_id):
-    return download_student_credential(student_id, "horizontal")
 
 
 
-@app.route("/credencial/<token_credencial>")
-def credencial_digital(token_credencial):
-    credencial = db_manager.obtener_credencial_digital_por_token(token_credencial)
-    if not credencial:
-        abort(404)
-    ruta_qr = ensure_credential_qr(credencial)
-    url_digital = asegurar_url_digital_credencial(credencial)
-    return render_template(
-        "credencial_digital.html",
-        credencial=datos_credencial_digital(credencial),
-        url_digital=url_digital,
-        ruta_qr_publica=ruta_publica_qr(ruta_qr),
-        estado=estado_credencial_digital(credencial),
-    )
 
 
-@app.route("/participantes/<path:student_id>/credencial-digital")
-@login_required
-@role_required("admin", "staff")
-def abrir_credencial_digital_participante(student_id):
-    student = db_manager.get_student_by_id(student_id)
-    if not student:
-        flash("Participante no encontrado", "warning")
-        return redirect(url_for("data"))
-    credencial = db_manager.ensure_student_participant_credential(student_dict_to_tuple(student))
-    ensure_credential_qr(credencial)
-    return redirect(asegurar_url_digital_credencial(credencial))
+
+
 
 
 def datos_credencial_digital(credencial):
+    """Ejecuta la operaciÃ³n datos credencial digital y devuelve el resultado correspondiente."""
     nombre = credencial.get("full_name") or nombre_completo_credencial(credencial)
     return {
         "nombre": nombre or "Participante",
@@ -1586,29 +763,33 @@ def datos_credencial_digital(credencial):
 
 
 def nombre_completo_credencial(credencial):
+    """Ejecuta la operaciÃ³n nombre completo credencial y devuelve el resultado correspondiente."""
     partes = [credencial.get("first_name"), credencial.get("last_name_p"), credencial.get("last_name_m")]
     return " ".join(parte for parte in partes if parte)
 
 
 def estado_credencial_digital(credencial):
+    """Ejecuta la operaciÃ³n estado credencial digital y devuelve el resultado correspondiente."""
     if credencial.get("credential_status") != "active":
         return {"texto": "Inactiva", "clase": "digital-status-danger"}
     if credencial.get("participant_status") != "active":
         return {"texto": "Participante inactivo", "clase": "digital-status-danger"}
     return {"texto": "Activa", "clase": "digital-status-ok"}
 
-def download_student_credential(student_id, layout):
-    student = db_manager.get_student_by_id(student_id)
+def descargar_participante_credencial(student_id, layout):
+    """Ejecuta la operaciÃ³n descargar participante credencial y devuelve el resultado correspondiente."""
+    student = db_manager.obtener_participante_por_id(student_id)
     if not student:
         flash("Participante no encontrado", "warning")
-        return redirect(url_for("data"))
-    data = build_single_credential_student(student)
-    pdf = build_single_credential_pdf(data, layout)
-    return send_single_credential(pdf, data, layout)
+        return redirect(url_for("participantes.datos"))
+    datos = construir_individual_credencial_participante(student)
+    pdf = construir_individual_credencial_pdf(datos, layout)
+    return enviar_individual_credencial(pdf, datos, layout)
 
 
-def build_single_credential_student(student):
-    qr_path, credential_token, is_legacy_qr = ensure_student_qr(student_dict_to_tuple(student), QRManager())
+def construir_individual_credencial_participante(student):
+    """Ejecuta la operaciÃ³n construir individual credencial participante y devuelve el resultado correspondiente."""
+    qr_path, credential_token, is_legacy_qr = asegurar_participante_qr(participante_dict_a_tuple(student), GestorQR())
     project_id = student.get("project_id")
     return {
         "name": f"{student['first_name']} {student['last_name_p']} {student['last_name_m']}",
@@ -1622,124 +803,77 @@ def build_single_credential_student(student):
     }
 
 
-def build_single_credential_pdf(student, layout):
+def construir_individual_credencial_pdf(student, layout):
+    """Ejecuta la operaciÃ³n construir individual credencial pdf y devuelve el resultado correspondiente."""
     pdf = BytesIO()
     if layout == "horizontal":
-        build_rectangular_credentials_pdf([student], pdf)
+        construir_horizontal_credenciales_pdf([student], pdf)
     else:
-        build_standard_credentials_pdf([student], pdf)
+        construir_estandar_credenciales_pdf([student], pdf)
     pdf.seek(0)
     return pdf
 
 
-def send_single_credential(pdf, student, layout):
+def enviar_individual_credencial(pdf, student, layout):
+    """Ejecuta la operaciÃ³n enviar individual credencial y devuelve el resultado correspondiente."""
     suffix = "horizontal" if layout == "horizontal" else "vertical"
-    name = safe_filename(student.get("matricula") or student.get("credential_token"), "credencial")
+    name = seguro_nombre_archivo(student.get("matricula") or student.get("credential_token"), "credencial")
     return send_file(pdf, mimetype="application/pdf", as_attachment=True, download_name=f"{name}_{suffix}.pdf")
 
 
-@app.route("/download_all_qrs_pdf")
-@login_required
-@role_required("admin", "staff")
-def download_all_qrs_pdf():
-    local_qr_manager = QRManager()
-    event_id = request.args.get("event_id") or None
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_dir = ensure_report_dir()
-    pdf_path = os.path.join(report_dir, f"qr_codes_{timestamp}.pdf").replace("\\", "/")
-
-    student_data = get_credential_students(local_qr_manager, event_id)
-    if not student_data:
-        flash("No hay credenciales para descargar", "warning")
-        return redirect(url_for("data", event_id=event_id) if event_id else url_for("data"))
-
-    build_standard_credentials_pdf(student_data, pdf_path)
-    return send_file(pdf_path, as_attachment=True, download_name="credenciales.pdf")
 
 
-@app.route("/download_all_credentials_rect_pdf")
-@login_required
-@role_required("admin", "staff")
-def download_all_credentials_rect_pdf():
-    local_qr_manager = QRManager()
-    event_id = request.args.get("event_id") or None
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_dir = ensure_report_dir()
-    pdf_path = os.path.join(report_dir, f"credentials_rect_{timestamp}.pdf").replace("\\", "/")
-
-    student_data = get_credential_students(local_qr_manager, event_id)
-    if not student_data:
-        flash("No hay credenciales para descargar", "warning")
-        return redirect(url_for("data", event_id=event_id) if event_id else url_for("data"))
-
-    build_rectangular_credentials_pdf(student_data, pdf_path)
-    return send_file(pdf_path, as_attachment=True, download_name="credenciales_rectangulares.pdf")
 
 
-@app.route("/download_credentials_by_project")
-@login_required
-@role_required("admin", "staff")
-def download_credentials_by_project():
-    local_qr_manager = QRManager()
-    event_id = request.args.get("event_id") or None
-    student_data = get_credential_students(local_qr_manager, event_id)
-
-    if not student_data:
-        flash("No hay credenciales para descargar", "warning")
-        return redirect(url_for("data", event_id=event_id) if event_id else url_for("data"))
-
-    timestamp = timestamp_slug()
-    zip_path = build_project_credentials_zip(student_data, timestamp)
-    return send_file(
-        zip_path,
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name=f"credenciales_por_proyecto_{timestamp}.zip",
-    )
 
 
-def timestamp_slug():
+def marca_tiempo_identificador():
+    """Ejecuta la operaciÃ³n timestamp slug y devuelve el resultado correspondiente."""
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
-def build_project_credentials_zip(student_data, timestamp):
-    zip_path = os.path.join(ensure_report_dir(), f"credenciales_por_proyecto_{timestamp}.zip").replace("\\", "/")
-    grouped_projects = group_students_by_project(student_data)
-    write_project_zip(zip_path, grouped_projects)
+def construir_proyecto_credenciales_zip(student_data, timestamp):
+    """Ejecuta la operaciÃ³n construir proyecto credenciales zip y devuelve el resultado correspondiente."""
+    zip_path = os.path.join(asegurar_reporte_direccion(), f"credenciales_por_proyecto_{timestamp}.zip").replace("\\", "/")
+    grouped_projects = agrupar_participantes_por_proyecto(student_data)
+    escribir_proyecto_zip(zip_path, grouped_projects)
     return zip_path
 
 
-def group_students_by_project(student_data):
+def agrupar_participantes_por_proyecto(student_data):
+    """Ejecuta la operaciÃ³n agrupar participantes por proyecto y devuelve el resultado correspondiente."""
     grouped = {}
     for student in student_data:
-        add_student_to_project_group(grouped, student)
+        agregar_participante_a_proyecto_agrupar(grouped, student)
     return grouped
 
 
-def add_student_to_project_group(grouped, student):
+def agregar_participante_a_proyecto_agrupar(grouped, student):
+    """Ejecuta la operaciÃ³n agregar participante a proyecto agrupar y devuelve el resultado correspondiente."""
     key = student.get("project_id") or "sin_proyecto"
     grouped.setdefault(key, {"name": student.get("project_name") or "Sin proyecto", "students": []})
     grouped[key]["students"].append(student)
 
 
-def write_project_zip(zip_path, grouped_projects):
+def escribir_proyecto_zip(zip_path, grouped_projects):
+    """Ejecuta la operaciÃ³n escribir proyecto zip y devuelve el resultado correspondiente."""
     used_names = set()
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for project_key, project in grouped_projects.items():
-            write_project_pdf_to_zip(zf, project_key, project, used_names)
+            escribir_proyecto_pdf_a_zip(zf, project_key, project, used_names)
 
 
-def write_project_pdf_to_zip(zf, project_key, project, used_names):
+def escribir_proyecto_pdf_a_zip(zf, project_key, project, used_names):
+    """Ejecuta la operaciÃ³n escribir proyecto pdf a zip y devuelve el resultado correspondiente."""
     pdf_buffer = BytesIO()
-    build_rectangular_credentials_pdf(project["students"], pdf_buffer)
-    file_name = unique_project_pdf_name(project, project_key, used_names)
+    construir_horizontal_credenciales_pdf(project["students"], pdf_buffer)
+    file_name = unico_proyecto_pdf_nombre(project, project_key, used_names)
     zf.writestr(file_name, pdf_buffer.getvalue())
 
 
-def unique_project_pdf_name(project, project_key, used_names):
-    base_name = safe_filename(project["name"], f"proyecto_{project_key}")
+def unico_proyecto_pdf_nombre(project, project_key, used_names):
+    """Ejecuta la operaciÃ³n unico proyecto pdf nombre y devuelve el resultado correspondiente."""
+    base_name = seguro_nombre_archivo(project["name"], f"proyecto_{project_key}")
     file_name = f"{base_name}.pdf"
     counter = 2
     while file_name in used_names:
@@ -1749,40 +883,17 @@ def unique_project_pdf_name(project, project_key, used_names):
     return file_name
 
 
-@app.route("/download_all_qrs")
-@login_required
-@role_required("admin", "staff")
-def download_all_qrs():
-    event_id = request.args.get("event_id") or None
-    students = db_manager.get_all_students_filtered(event_id_filter=event_id) if event_id else db_manager.get_all_students()
-    local_qr_manager = QRManager()
-    memory_file = BytesIO()
-
-    with zipfile.ZipFile(memory_file, "w", zipfile.ZIP_DEFLATED) as zf:
-        for student in students:
-            matricula = student[4]
-            qr_path, credential_token, _ = ensure_student_qr(student, local_qr_manager)
-
-            if os.path.exists(qr_path):
-                qr_name = credential_token or matricula
-                zf.write(qr_path, arcname=f"qr_codes/{qr_name}_{matricula}.png")
-
-    memory_file.seek(0)
-    return send_file(
-        memory_file,
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name="all_qr_codes.zip",
-    )
 
 
 
 def linea_credencial_digital_envio(fila):
+    """Ejecuta la operaciÃ³n linea credencial digital envio y devuelve el resultado correspondiente."""
     url_digital = asegurar_url_digital_credencial(fila)
     return f"- {fila['full_name']} | Credencial digital: {url_digital}"
 
-def build_credential_email_batches(event_id):
-    rows = db_manager.get_event_credential_rows(event_id)
+def construir_credencial_correo_lotes(event_id):
+    """Ejecuta la operaciÃ³n construir credencial correo lotes y devuelve el resultado correspondiente."""
+    rows = db_manager.obtener_evento_credencial_filas(event_id)
     projects_with_advisors = {}
     for row in rows:
         participant_type = (row.get("participant_type") or "").lower()
@@ -1806,231 +917,37 @@ def build_credential_email_batches(event_id):
     return batches
 
 
-@app.route("/send_event_credentials", methods=["POST"])
-@login_required
-@role_required("admin")
-def send_event_credentials():
-    event_id = request.form.get("event_id") or None
-    if not event_id:
-        flash("Selecciona un evento para enviar credenciales", "warning")
-        return redirect(url_for("data"))
-
-    event = db_manager.get_event(event_id)
-    if not event:
-        flash("Evento no encontrado", "danger")
-        return redirect(url_for("data"))
-
-    batches = build_credential_email_batches(event_id)
-    if not batches:
-        flash("No hay correos disponibles para enviar credenciales", "warning")
-        return redirect(url_for("data", event_id=event_id))
-
-    sent_count = 0
-    error_count = 0
-    template = db_manager.get_event_template(event_id)
-    subject = render_text_template(template["email_subject"], event_name=event[1])
-    for batch in batches:
-        attachments = []
-        credential_ids = []
-        for row in batch["rows"]:
-            qr_path = ensure_credential_qr({"token": row["token"], "qr_path": row.get("qr_path")})
-            if os.path.exists(qr_path):
-                filename = f"{row.get('matricula') or row['token']}.png"
-                attachments.append((qr_path, filename))
-                credential_ids.append(row["credential_id"])
-
-        names = "\n".join(linea_credencial_digital_envio(row) for row in batch["rows"])
-        body = render_text_template(
-            template["email_body"],
-            event_name=event[1],
-            participant_list=names,
-            recipient=batch["recipient"],
-        )
-        try:
-            send_mail(batch["recipient"], subject, body, attachments)
-            db_manager.update_credentials_sent_status(credential_ids, "sent")
-            db_manager.log_email(event_id, batch["recipient"], subject, "sent")
-            sent_count += 1
-        except Exception as exc:
-            db_manager.update_credentials_sent_status(credential_ids, "error")
-            db_manager.log_email(event_id, batch["recipient"], subject, "error", str(exc))
-            error_count += 1
-
-    flash(f"Envios completados: {sent_count}. Errores: {error_count}.", "success" if error_count == 0 else "warning")
-    return redirect(url_for("data", event_id=event_id))
 
 
-@app.route("/generate_qr", methods=["POST"])
-@login_required
-@role_required("admin", api=True)
-def generate_qr():
-    data = request.form
-    student_id = str(uuid.uuid4())
-    try:
-        first_name = data["first_name"]
-        last_name_p = data["last_name_p"]
-        last_name_m = data["last_name_m"]
-        matricula = data["matricula"]
-        carrera = data["carrera"]
-        event_id = data.get("event_id") or None
-        project_id = data.get("project_id") or None
-        participant_type = data.get("participant_type") or "alumno"
-
-        if not event_id:
-            return jsonify({"success": False, "error": "Selecciona un evento"}), 400
-
-        if event_id and not db_manager.get_event(event_id):
-            return jsonify({"success": False, "error": "Evento no encontrado"}), 400
-
-        if project_id:
-            valid_project_ids = {str(project[0]) for project in db_manager.get_projects_by_event(event_id)}
-            if str(project_id) not in valid_project_ids:
-                return jsonify({"success": False, "error": f"Proyecto con ID {project_id} no existe"}), 400
-
-        dynamic_values = {}
-        email_value = None
-        if event_id:
-            for field in db_manager.get_event_fields(event_id):
-                field_id = field[0]
-                field_name = field[2]
-                if normalize_field_name(field_name) in BASE_REGISTRATION_FIELD_NAMES:
-                    continue
-                is_required = bool(field[4])
-                value = (data.get(f"field_{field_id}") or "").strip()
-                if is_required and not value:
-                    return jsonify({"success": False, "error": f"Falta el campo {field_name}"}), 400
-                if value:
-                    dynamic_values[field_id] = value
-                if normalize_field_name(field_name) in ("correo", "email") and value:
-                    email_value = value
-
-        db_manager.add_student(
-            student_id,
-            first_name,
-            last_name_p,
-            last_name_m,
-            matricula,
-            carrera,
-            project_id,
-            event_id,
-            email_value,
-            participant_type,
-        )
-        student = db_manager.get_student_by_matricula(matricula)
-        credential = db_manager.ensure_student_participant_credential(student)
-        participant_id = db_manager.get_participant_id_by_student_id(student[0])
-        db_manager.save_participant_event_field_values(participant_id, dynamic_values)
-        qr_path = ensure_credential_qr(credential)
-        full_name = f"{first_name} {last_name_p} {last_name_m}".strip()
-        send_registered_credential_silently(
-            event_id,
-            project_id,
-            participant_type,
-            email_value,
-            credential,
-            qr_path,
-            full_name,
-            matricula,
-        )
-        return jsonify({"success": True, "qr_path": qr_path, "credential_token": credential["token"]})
-    except KeyError as e:
-        return jsonify({"success": False, "error": f"Falta el campo {str(e)}"}), 400
-    except mysql.connector.Error as e:
-        if e.errno == 1062:
-            return jsonify({"success": False, "error": f"La matricula {matricula} ya esta registrada"}), 400
-        return jsonify({"success": False, "error": "Error en la base de datos"}), 500
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route("/upload_excel", methods=["POST"])
-@login_required
-@role_required("admin", api=True)
-def upload_excel():
-    try:
-        if "file" in request.files:
-            file = request.files["file"]
-        elif "excel_file" in request.files:
-            file = request.files["excel_file"]
-        else:
-            return jsonify({"success": False, "error": "No se proporciono un archivo Excel"}), 400
-
-        project_id = request.form.get("project_id") or None
-        event_id = request.form.get("event_id") or None
-        if file.filename == "":
-            return jsonify({"success": False, "error": "No se selecciono un archivo"}), 400
-        if not event_id:
-            return jsonify({"success": False, "error": "Selecciona un evento"}), 400
-        if not db_manager.get_event(event_id):
-            return jsonify({"success": False, "error": "Evento no encontrado"}), 400
-        if project_id:
-            valid_project_ids = {str(project[0]) for project in db_manager.get_projects_by_event(event_id)}
-            if str(project_id) not in valid_project_ids:
-                return jsonify({"success": False, "error": "Proyecto no encontrado para este evento"}), 400
-
-        result = db_manager.upload_students_from_excel(file, project_id, event_id)
-        return jsonify({"success": True, "message": result})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route("/preview_excel", methods=["POST"])
-@login_required
-@role_required("admin", api=True)
-def preview_excel():
-    try:
-        file = request.files.get("excel_file") or request.files.get("file")
-        if not file or file.filename == "":
-            return jsonify({"success": False, "error": "Selecciona un archivo Excel"}), 400
-        df, import_format = db_manager.prepare_excel_import_dataframe(file)
-        required = ['first_name', 'last_name_p', 'last_name_m', 'matricula', 'carrera']
-        missing = [column for column in required if column not in df.columns]
-        rows = df.head(5).fillna("").to_dict(orient="records")
-        return jsonify({
-            "success": True,
-            "columns": list(df.columns),
-            "format": import_format,
-            "missing": missing,
-            "row_count": len(df.index),
-            "preview": rows,
-        })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route("/register_attendance", methods=["POST"])
-@login_required
-@role_required("admin", "staff", api=True)
-def register_attendance():
-    try:
-        data = request.get_json()
-        error = validar_peticion_asistencia(data)
-        if error:
-            return jsonify({"success": False, "error": error}), 400
-        result = registrar_asistencia_desde_payload(data)
-        return respuesta_registro_asistencia(result)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
 
 
-def validar_peticion_asistencia(data):
-    if not data or "qr_data" not in data:
+def validar_peticion_asistencia(datos):
+    """Ejecuta la operaciÃ³n validar peticion asistencia y devuelve el resultado correspondiente."""
+    if not datos or "qr_data" not in datos:
         return "Datos de QR no proporcionados"
     if usuario_operativo_sin_eventos():
         return "No tienes eventos asignados para registrar asistencia"
-    event_id = normalizar_evento_asistencia(data.get("event_id"))
+    event_id = normalizar_evento_asistencia(datos.get("event_id"))
     if evento_no_autorizado(event_id):
         return "No tienes permiso para registrar asistencia en este evento"
     return None
 
 
-def registrar_asistencia_desde_payload(data):
-    event_id = normalizar_evento_asistencia(data.get("event_id"))
-    event_type = data.get("event_type") or "entrada"
-    return attendance_manager.register_attendance_by_qr_data(data["qr_data"], event_id, event_type)
+def registrar_asistencia_desde_payload(datos):
+    """Ejecuta la operaciÃ³n registrar asistencia desde payload y devuelve el resultado correspondiente."""
+    event_id = normalizar_evento_asistencia(datos.get("event_id"))
+    event_type = datos.get("event_type") or "entrada"
+    return attendance_manager.registrar_por_datos_qr(datos["qr_data"], event_id, event_type)
 
 
 def normalizar_evento_asistencia(event_id):
+    """Ejecuta la operaciÃ³n normalizar evento asistencia y devuelve el resultado correspondiente."""
     try:
         return int(event_id) if event_id else None
     except (TypeError, ValueError):
@@ -2038,6 +955,7 @@ def normalizar_evento_asistencia(event_id):
 
 
 def respuesta_registro_asistencia(result):
+    """Ejecuta la operaciÃ³n respuesta registro asistencia y devuelve el resultado correspondiente."""
     if result == "Asistencia registrada exitosamente":
         return jsonify({"success": True, "message": result})
     if resultado_es_duplicado(result):
@@ -2046,118 +964,83 @@ def respuesta_registro_asistencia(result):
 
 
 def resultado_es_duplicado(resultado):
+    """Ejecuta la operaciÃ³n resultado es duplicado y devuelve el resultado correspondiente."""
     texto = (resultado or "").lower()
     return "duplicada" in texto or "ya fue tomado" in texto
 
 
-@app.route("/get_projects")
-@login_required
-@role_required("admin", "staff", api=True)
-def get_projects():
-    projects = db_manager.get_all_projects()
-    return jsonify([{"id": p[0], "name": p[1]} for p in projects])
 
 
-@app.route("/export_excel")
-@login_required
-@role_required("admin", "staff")
-def export_excel():
-    project_id = request.args.get("project_id")
-    start_date = request.args.get("start_date")
-    end_date = request.args.get("end_date")
-    try:
-        file_path = db_manager.export_attendance_to_excel(project_id, start_date, end_date)
-        return send_file(file_path, as_attachment=True)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route("/export_pdf")
-@login_required
-@role_required("admin", "staff")
-def export_pdf():
-    project_id = request.args.get("project_id")
-    start_date = request.args.get("start_date")
-    end_date = request.args.get("end_date")
-    try:
-        file_path = db_manager.export_attendance_to_pdf(project_id, start_date, end_date)
-        return send_file(file_path, as_attachment=True)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route("/generate_report", methods=["POST"])
-@login_required
-@role_required("admin", "staff", api=True)
-def generate_report():
-    try:
-        report_path = build_requested_report(request.form)
-        return jsonify({"success": True, "report_path": report_path})
-    except PermissionError as e:
-        return jsonify({"success": False, "error": str(e)}), 403
-    except ValueError as e:
-        return jsonify({"success": False, "error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
 
 
-def build_requested_report(data):
-    params = report_request_params(data)
+def construir_solicitado_reporte(datos):
+    """Ejecuta la operaciÃ³n construir solicitado reporte y devuelve el resultado correspondiente."""
+    params = reporte_request_params(datos)
     if evento_no_autorizado(params["event_id"]):
         raise PermissionError("No tienes permiso para generar reportes de este evento")
     if params["report_type"] == "final" and not params["event_id"]:
         raise ValueError("Selecciona un evento para generar el reporte final oficial")
     if params["event_id"]:
-        return build_event_report(params)
-    return build_legacy_report(params)
+        return construir_evento_reporte(params)
+    return construir_heredado_reporte(params)
 
 
-def report_request_params(data):
+def reporte_request_params(datos):
+    """Ejecuta la operaciÃ³n report request params y devuelve el resultado correspondiente."""
     return {
-        "start_date": data.get("start_date") or None,
-        "end_date": data.get("end_date") or None,
-        "project_id": data.get("project_id") or None,
-        "event_id": data.get("event_id") or None,
-        "format": data.get("format"),
-        "report_type": data.get("report_type") or "asistencia",
+        "start_date": datos.get("start_date") or None,
+        "end_date": datos.get("end_date") or None,
+        "project_id": datos.get("project_id") or None,
+        "event_id": datos.get("event_id") or None,
+        "format": datos.get("format"),
+        "report_type": datos.get("report_type") or "asistencia",
     }
 
 
-def build_event_report(params):
+def construir_evento_reporte(params):
+    """Ejecuta la operaciÃ³n construir evento reporte y devuelve el resultado correspondiente."""
     if params["report_type"] == "final" and params["format"] == "pdf":
         return db_manager.exportar_reporte_final_evento_pdf(params["event_id"])
     if params["report_type"] == "final" and params["format"] == "excel":
         return db_manager.exportar_reporte_final_evento_excel(params["event_id"])
     if params["format"] == "pdf":
-        return db_manager.export_event_attendance_to_pdf(params["event_id"], params["project_id"], params["start_date"], params["end_date"])
+        return db_manager.exportar_evento_asistencia_a_pdf(params["event_id"], params["project_id"], params["start_date"], params["end_date"])
     if params["format"] == "excel":
-        return db_manager.export_event_attendance_to_excel(params["event_id"], params["project_id"], params["start_date"], params["end_date"])
+        return db_manager.exportar_evento_asistencia_a_excel(params["event_id"], params["project_id"], params["start_date"], params["end_date"])
     raise ValueError("Formato no soportado")
 
 
-def build_legacy_report(params):
-    report_data = attendance_manager.get_attendance_report(params["start_date"], params["end_date"], params["project_id"])
+def construir_heredado_reporte(params):
+    """Ejecuta la operaciÃ³n construir heredado reporte y devuelve el resultado correspondiente."""
+    report_data = attendance_manager.obtener_reporte(params["start_date"], params["end_date"], params["project_id"])
     if not report_data:
         raise ValueError("No hay datos para el reporte")
     if params["format"] == "pdf":
-        return build_legacy_report_pdf(report_data)
+        return construir_heredado_reporte_pdf(report_data)
     if params["format"] == "excel":
-        return build_legacy_report_excel(report_data)
+        return construir_heredado_reporte_excel(report_data)
     raise ValueError("Formato no soportado")
 
 
-def legacy_report_path(extension):
-    return os.path.join(ensure_report_dir(), f"report_{timestamp_slug()}.{extension}").replace("\\", "/")
+def heredado_reporte_ruta(extension):
+    """Ejecuta la operaciÃ³n legacy report path y devuelve el resultado correspondiente."""
+    return os.path.join(asegurar_reporte_direccion(), f"report_{marca_tiempo_identificador()}.{extension}").replace("\\", "/")
 
 
-def build_legacy_report_pdf(report_data):
-    report_path = legacy_report_path("pdf")
-    doc = legacy_report_pdf_doc(report_path)
-    doc.build(legacy_report_pdf_elements(report_data))
+def construir_heredado_reporte_pdf(report_data):
+    """Ejecuta la operaciÃ³n construir heredado reporte pdf y devuelve el resultado correspondiente."""
+    report_path = heredado_reporte_ruta("pdf")
+    doc = heredado_reporte_pdf_doc(report_path)
+    doc.build(heredado_reporte_pdf_elements(report_data))
     return report_path
 
 
-def legacy_report_pdf_doc(report_path):
+def heredado_reporte_pdf_doc(report_path):
+    """Ejecuta la operaciÃ³n legacy report pdf doc y devuelve el resultado correspondiente."""
     return SimpleDocTemplate(
         report_path, pagesize=landscape(letter),
         leftMargin=0.35 * inch, rightMargin=0.35 * inch,
@@ -2165,13 +1048,15 @@ def legacy_report_pdf_doc(report_path):
     )
 
 
-def legacy_report_pdf_elements(report_data):
-    styles = legacy_report_pdf_styles()
-    table = legacy_report_pdf_table(report_data, styles)
-    return legacy_report_pdf_header(len(report_data), styles) + [table]
+def heredado_reporte_pdf_elements(report_data):
+    """Ejecuta la operaciÃ³n legacy report pdf elements y devuelve el resultado correspondiente."""
+    styles = heredado_reporte_pdf_styles()
+    table = heredado_reporte_pdf_tabla(report_data, styles)
+    return heredado_reporte_pdf_encabezado(len(report_data), styles) + [table]
 
 
-def legacy_report_pdf_styles():
+def heredado_reporte_pdf_styles():
+    """Ejecuta la operaciÃ³n legacy report pdf styles y devuelve el resultado correspondiente."""
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle("ReportMeta", parent=styles["Normal"], fontSize=8, textColor=colors.HexColor("#475569")))
     styles.add(ParagraphStyle("ReportCell", parent=styles["Normal"], fontSize=6.8, leading=8, textColor=colors.HexColor("#0f172a")))
@@ -2179,7 +1064,8 @@ def legacy_report_pdf_styles():
     return styles
 
 
-def legacy_report_pdf_header(total, styles):
+def heredado_reporte_pdf_encabezado(total, styles):
+    """Ejecuta la operaciÃ³n legacy report pdf header y devuelve el resultado correspondiente."""
     generated = datetime.now().strftime("%Y-%m-%d %H:%M")
     return [
         Paragraph("Reporte de asistencias - AsisTec", styles["Title"]),
@@ -2188,32 +1074,38 @@ def legacy_report_pdf_header(total, styles):
     ]
 
 
-def legacy_report_pdf_table(report_data, styles):
-    rows = legacy_report_table_data(report_data)
-    table_data = [[legacy_pdf_cell(value, styles["ReportHeader" if idx == 0 else "ReportCell"]) for value in row] for idx, row in enumerate(rows)]
-    table = Table(table_data, colWidths=legacy_report_pdf_widths(), repeatRows=1)
-    table.setStyle(legacy_report_table_style())
+def heredado_reporte_pdf_tabla(report_data, styles):
+    """Ejecuta la operaciÃ³n legacy report pdf table y devuelve el resultado correspondiente."""
+    rows = heredado_reporte_tabla_datos(report_data)
+    table_data = [[heredado_pdf_celda(value, styles["ReportHeader" if idx == 0 else "ReportCell"]) for value in row] for idx, row in enumerate(rows)]
+    table = Table(table_data, colWidths=heredado_reporte_pdf_widths(), repeatRows=1)
+    table.setStyle(heredado_reporte_tabla_style())
     return table
 
 
-def legacy_pdf_cell(value, style):
+def heredado_pdf_celda(value, style):
+    """Ejecuta la operaciÃ³n legacy pdf cell y devuelve el resultado correspondiente."""
     return Paragraph(escape(str(value or "")), style)
 
 
-def legacy_report_pdf_widths():
+def heredado_reporte_pdf_widths():
+    """Ejecuta la operaciÃ³n legacy report pdf widths y devuelve el resultado correspondiente."""
     return [value * inch for value in [0.9, 1.05, 1.0, 1.0, 1.55, 1.45, 1.15]]
 
 
-def legacy_report_table_data(report_data):
+def heredado_reporte_tabla_datos(report_data):
+    """Ejecuta la operaciÃ³n legacy report table data y devuelve el resultado correspondiente."""
     headers = ["Matricula", "Nombre", "Apellido P", "Apellido M", "Carrera", "Proyecto", "Fecha/Hora"]
-    return [headers] + [legacy_report_row(row) for row in report_data]
+    return [headers] + [heredado_reporte_fila(row) for row in report_data]
 
 
-def legacy_report_row(row):
+def heredado_reporte_fila(row):
+    """Ejecuta la operaciÃ³n legacy report row y devuelve el resultado correspondiente."""
     return [row[0], row[1], row[2], row[3], row[4], row[5] or "Sin proyecto", row[6].strftime("%Y-%m-%d %H:%M:%S")]
 
 
-def legacy_report_table_style():
+def heredado_reporte_tabla_style():
+    """Ejecuta la operaciÃ³n legacy report table style y devuelve el resultado correspondiente."""
     return TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#08223c")),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -2225,27 +1117,49 @@ def legacy_report_table_style():
     ])
 
 
-def build_legacy_report_excel(report_data):
-    report_path = legacy_report_path("xlsx")
+def construir_heredado_reporte_excel(report_data):
+    """Ejecuta la operaciÃ³n construir heredado reporte excel y devuelve el resultado correspondiente."""
+    report_path = heredado_reporte_ruta("xlsx")
     workbook = xlsxwriter.Workbook(report_path)
-    write_legacy_report_sheet(workbook, report_data)
+    escribir_heredado_reporte_hoja(workbook, report_data)
     workbook.close()
     return report_path
 
 
-def write_legacy_report_sheet(workbook, report_data):
+def escribir_heredado_reporte_hoja(workbook, report_data):
+    """Ejecuta la operaciÃ³n escribir heredado reporte hoja y devuelve el resultado correspondiente."""
     worksheet = workbook.add_worksheet()
     worksheet.write("A1", "Reporte de Asistencias - AsisTec")
-    for col, header in enumerate(legacy_report_table_data([])[0]):
+    for col, header in enumerate(heredado_reporte_tabla_datos([])[0]):
         worksheet.write(1, col, header)
     for row_idx, row in enumerate(report_data, 2):
-        write_legacy_report_excel_row(worksheet, row_idx, row)
+        escribir_heredado_reporte_excel_fila(worksheet, row_idx, row)
 
 
-def write_legacy_report_excel_row(worksheet, row_idx, row):
-    for col, value in enumerate(legacy_report_row(row)):
+def escribir_heredado_reporte_excel_fila(worksheet, row_idx, row):
+    """Ejecuta la operaciÃ³n escribir heredado reporte excel fila y devuelve el resultado correspondiente."""
+    for col, value in enumerate(heredado_reporte_fila(row)):
         worksheet.write(row_idx, col, value)
 
+
+
+# Blueprints de presentaciÃ³n: se registran despuÃ©s de construir servicios y helpers.
+from presentacion.rutas.acceso import crear_blueprint as crear_blueprint_acceso
+from presentacion.rutas.usuarios import crear_blueprint as crear_blueprint_usuarios
+from presentacion.rutas.eventos import crear_blueprint as crear_blueprint_eventos
+from presentacion.rutas.participantes import crear_blueprint as crear_blueprint_participantes
+from presentacion.rutas.configuracion import crear_blueprint as crear_blueprint_configuracion
+from presentacion.rutas.asistencia import crear_blueprint as crear_blueprint_asistencia
+from presentacion.rutas.reportes import crear_blueprint as crear_blueprint_reportes
+
+_contexto_rutas = globals().copy()
+app.register_blueprint(crear_blueprint_acceso(_contexto_rutas))
+app.register_blueprint(crear_blueprint_usuarios(_contexto_rutas))
+app.register_blueprint(crear_blueprint_eventos(_contexto_rutas))
+app.register_blueprint(crear_blueprint_participantes(_contexto_rutas))
+app.register_blueprint(crear_blueprint_configuracion(_contexto_rutas))
+app.register_blueprint(crear_blueprint_asistencia(_contexto_rutas))
+app.register_blueprint(crear_blueprint_reportes(_contexto_rutas))
 
 if __name__ == "__main__":
     app.run(
@@ -2253,3 +1167,84 @@ if __name__ == "__main__":
         port=int(os.getenv("PORT", "5000")),
         debug=str_to_bool(os.getenv("FLASK_DEBUG"), default=True),
     )
+
+# Alias temporales para compatibilidad con la API anterior.
+add_student_to_project_group = agregar_participante_a_proyecto_agrupar
+build_credential_email_batches = construir_credencial_correo_lotes
+build_data_context = construir_datos_contexto
+build_event_report = construir_evento_reporte
+build_legacy_report = construir_heredado_reporte
+build_legacy_report_excel = construir_heredado_reporte_excel
+build_legacy_report_pdf = construir_heredado_reporte_pdf
+build_project_credentials_zip = construir_proyecto_credenciales_zip
+build_requested_report = construir_solicitado_reporte
+build_single_credential_pdf = construir_individual_credencial_pdf
+build_single_credential_student = construir_individual_credencial_participante
+build_student_row = construir_participante_fila
+build_student_rows = construir_participante_filas
+count_filtered_students = contar_filtrados_participantes
+download_student_credential = descargar_participante_credencial
+ensure_credential_qr = asegurar_credencial_qr
+ensure_report_dir = asegurar_reporte_direccion
+ensure_row_qr = asegurar_fila_qr
+ensure_student_qr = asegurar_participante_qr
+fetch_filtered_students = consultar_filtrados_participantes
+fetch_filtered_students_page = consultar_filtrados_participantes_pagina
+filter_events_for_current_user = filtrar_eventos_para_actual_usuario
+generate_student_qr_background = generar_participante_qr_segundo_plano
+get_credential_students = obtener_credencial_participantes
+get_custom_values_for_rows = obtener_personalizados_valores_para_filas
+get_db_config = obtener_bd_configuracion
+get_mail_config = obtener_correo_configuracion
+get_participant_filters = obtener_participante_filtros
+get_participant_page = obtener_participante_pagina
+get_role_home_endpoint = obtener_rol_inicio_destino
+group_students_by_project = agrupar_participantes_por_proyecto
+inject_template_helpers = inyectar_plantilla_auxiliares
+load_user = cargar_usuario
+mark_qr_job_submitted = marcar_qr_trabajo_enviado
+normalize_datetime_input = normalizar_fecha_hora_entrada
+normalize_field_name = normalizar_campo_nombre
+queue_qr_generation = encolar_qr_generacion
+render_text_template = renderizar_texto_plantilla
+safe_filename = seguro_nombre_archivo
+send_mail = enviar_correo
+send_registered_credential_silently = enviar_registered_credencial_silenciosamente
+send_single_credential = enviar_individual_credencial
+student_filter_args = participante_filtrar_argumentos
+submit_qr_generation = enviar_qr_generacion
+unique_project_pdf_name = unico_proyecto_pdf_nombre
+unmark_qr_job_submitted = desmarcar_qr_trabajo_enviado
+valid_sort = valido_orden
+valid_sort_dir = valido_orden_direccion
+write_legacy_report_excel_row = escribir_heredado_reporte_excel_fila
+write_legacy_report_sheet = escribir_heredado_reporte_hoja
+write_project_pdf_to_zip = escribir_proyecto_pdf_a_zip
+write_project_zip = escribir_proyecto_zip
+
+# Alias temporales para compatibilidad con la API anterior.
+User.is_admin = User.es_admin
+User.is_adminsuperior = User.es_adminsuperior
+User.is_guest = User.es_guest
+User.is_staff = User.es_staff
+cached_event = cached_evento
+cached_projects_by_event = cached_proyectos_por_evento
+event_id_desde_proyecto = evento_id_desde_proyecto
+legacy_pdf_cell = heredado_pdf_celda
+legacy_report_path = heredado_reporte_ruta
+legacy_report_pdf_doc = heredado_reporte_pdf_doc
+legacy_report_pdf_elements = heredado_reporte_pdf_elements
+legacy_report_pdf_header = heredado_reporte_pdf_encabezado
+legacy_report_pdf_styles = heredado_reporte_pdf_styles
+legacy_report_pdf_table = heredado_reporte_pdf_tabla
+legacy_report_pdf_widths = heredado_reporte_pdf_widths
+legacy_report_row = heredado_reporte_fila
+legacy_report_table_data = heredado_reporte_tabla_datos
+legacy_report_table_style = heredado_reporte_tabla_style
+report_request_params = reporte_request_params
+role_required = rol_requeridos
+row_needs_qr = fila_needs_qr
+student_dict_to_tuple = participante_dict_a_tuple
+student_existing_credential = participante_existente_credencial
+student_project_name = participante_proyecto_nombre
+timestamp_slug = marca_tiempo_identificador
